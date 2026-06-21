@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Competitor Analysis · PM Toolkit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="common.css">
+<link rel="stylesheet" href="competitor_analysis.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="index.html" class="back-btn" title="Back to toolkit">&#8592;</a>
+      <div class="brand"><span class="brand-mark">&#9670;</span> Competitor Analysis</div>
+    </div>
+    <div class="topbar-actions">
+      <label class="theme-toggle" title="Toggle light / dark theme">
+        <span class="t-icon">&#9790;</span>
+        <input type="checkbox" id="themeToggle">
+        <span class="toggle-pill"><span class="toggle-dot"></span></span>
+        <span class="t-icon">&#9728;</span>
+      </label>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="panel">
+
+      <div class="ca-panel-section">
+        <h2>Competitors</h2>
+        <div class="add-row">
+          <input type="text" id="competitorInput" placeholder="Competitor name…" maxlength="36">
+          <button class="add-item-btn" id="addCompBtn">+</button>
+        </div>
+        <div id="competitorList" class="ca-list"></div>
+      </div>
+
+      <div class="ca-panel-note">
+        <p>Competitors are shared across all diagrams. Each diagram has its own features and scores.</p>
+      </div>
+
+    </aside>
+
+    <main class="canvas">
+      <div class="diagrams-toolbar">
+        <button class="add-diagram-btn" id="addDiagramBtn">+ New diagram</button>
+      </div>
+      <div id="diagramsGrid" class="diagrams-grid"></div>
+    </main>
+  </div>
+
+</div>
+<script>
+  var PALETTE = ['#2DD4BF','#A78BFA','#FB7185','#F59E0B','#60A5FA','#34D399','#F97316','#E879F9'];
+
+  // ── State ────────────────────────────────────────────────────────
+  // competitors: [{id, name, color}]
+  // diagrams:   [{id, name, features:[{id,name}], scores:{compId:{featId:val}}}]
+  var state = { competitors: [], diagrams: [] };
+
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function get(id) { return document.getElementById(id); }
+
+  // ── Save / load ──────────────────────────────────────────────────
+  function save() {
+    localStorage.setItem('competitor-v2', JSON.stringify(state));
+  }
+
+  function load() {
+    var raw = localStorage.getItem('competitor-v2');
+    if (raw) {
+      try {
+        var p = JSON.parse(raw);
+        if (Array.isArray(p.competitors)) state.competitors = p.competitors;
+        if (Array.isArray(p.diagrams))    state.diagrams    = p.diagrams;
+      } catch(e) {}
+    } else {
+      // Migrate from competitor-v1: old format stored scores on each competitor object
+      var old = localStorage.getItem('competitor-v1');
+      if (old) {
+        try {
+          var o = JSON.parse(old);
+          if (Array.isArray(o.features) && o.features.length &&
+              Array.isArray(o.competitors) && o.competitors.length) {
+            var sc = {};
+            o.competitors.forEach(function(c) {
+              sc[c.id] = {};
+              if (c.scores) o.features.forEach(function(f) { sc[c.id][f.id] = c.scores[f.id] || 5; });
+            });
+            state.diagrams.push({
+              id: uid(), name: 'Imported analysis',
+              features: o.features.map(function(f) { return { id: f.id, name: f.name }; }),
+              scores: sc
+            });
+            state.competitors = o.competitors.map(function(c, i) {
+              return { id: c.id, name: c.name, color: PALETTE[i % PALETTE.length] };
+            });
+          }
+        } catch(e) {}
+      }
+    }
+    // Ensure at least one diagram
+    if (!state.diagrams.length) {
+      state.diagrams.push({
+        id: uid(), name: 'Analysis 1',
+        features: [
+          { id:'f1', name:'Price' }, { id:'f2', name:'Quality' },
+          { id:'f3', name:'Support' }, { id:'f4', name:'Speed' },
+          { id:'f5', name:'Innovation' }
+        ],
+        scores: {}
+      });
+    }
+  }
+
+  // ── Competitors ──────────────────────────────────────────────────
+  function addCompetitor() {
+    var name = get('competitorInput').value.trim();
+    if (!name) { get('competitorInput').focus(); return; }
+    var id = uid();
+    state.competitors.push({ id: id, name: name, color: PALETTE[state.competitors.length % PALETTE.length] });
+    state.diagrams.forEach(function(d) {
+      if (!d.scores) d.scores = {};
+      d.scores[id] = {};
+      d.features.forEach(function(f) { d.scores[id][f.id] = 5; });
+    });
+    get('competitorInput').value = '';
+    save();
+    renderCompetitorList();
+    refreshAllSpiders();
+    refreshOpenScoreTables();
+  }
+
+  function deleteCompetitor(id) {
+    state.competitors = state.competitors.filter(function(c) { return c.id !== id; });
+    state.competitors.forEach(function(c, i) { c.color = PALETTE[i % PALETTE.length]; });
+    state.diagrams.forEach(function(d) { if (d.scores) delete d.scores[id]; });
+    save();
+    renderCompetitorList();
+    refreshAllSpiders();
+    refreshOpenScoreTables();
+  }
+
+  function renderCompetitorList() {
+    get('competitorList').innerHTML = state.competitors.length
+      ? state.competitors.map(function(c) {
+          return '<div class="ca-item">' +
+            '<span class="ca-color-dot" style="background:' + c.color + '"></span>' +
+            '<span class="ca-item-label">' + esc(c.name) + '</span>' +
+            '<button class="ca-del" data-cid="' + c.id + '">&#215;</button>' +
+          '</div>';
+        }).join('')
+      : '<p class="ca-hint">No competitors yet.</p>';
+  }
+
+  // ── Diagrams ─────────────────────────────────────────────────────
+  function addDiagram() {
+    var d = {
+      id: uid(), name: 'Analysis ' + (state.diagrams.length + 1),
+      features: [], scores: {}
+    };
+    state.competitors.forEach(function(c) { d.scores[c.id] = {}; });
+    state.diagrams.push(d);
+    save();
+    var div = document.createElement('div');
+    div.innerHTML = buildCardHTML(d);
+    get('diagramsGrid').appendChild(div.firstChild);
+    renderSpiderInCard(d);
+    var ti = get('title-' + d.id);
+    if (ti) { ti.select(); ti.focus(); }
+  }
+
+  function deleteDiagram(id) {
+    if (state.diagrams.length <= 1) { alert('Keep at least one diagram.'); return; }
+    state.diagrams = state.diagrams.filter(function(d) { return d.id !== id; });
+    save();
+    var card = get('card-' + id);
+    if (card) card.remove();
+  }
+
+  // ── Features (per diagram) ────────────────────────────────────────
+  function addFeature(diagId, name) {
+    if (!name) return;
+    var diag = state.diagrams.find(function(d) { return d.id === diagId; });
+    if (!diag) return;
+    var fid = uid();
+    diag.features.push({ id: fid, name: name });
+    state.competitors.forEach(function(c) {
+      if (!diag.scores) diag.scores = {};
+      if (!diag.scores[c.id]) diag.scores[c.id] = {};
+      diag.scores[c.id][fid] = 5;
+    });
+    save();
+    patchCardFeatures(diag);
+  }
+
+  function deleteFeature(diagId, featId) {
+    var diag = state.diagrams.find(function(d) { return d.id === diagId; });
+    if (!diag) return;
+    diag.features = diag.features.filter(function(f) { return f.id !== featId; });
+    if (diag.scores) Object.keys(diag.scores).forEach(function(cid) {
+      if (diag.scores[cid]) delete diag.scores[cid][featId];
+    });
+    save();
+    patchCardFeatures(diag);
+  }
+
+  function patchCardFeatures(diag) {
+    var chips = get('chips-' + diag.id);
+    if (chips) chips.innerHTML = buildChips(diag);
+    renderSpiderInCard(diag);
+    var card = get('card-' + diag.id);
+    if (card && card.classList.contains('scores-open')) renderScoreTable(diag);
+  }
+
+  // ── Card HTML builders ────────────────────────────────────────────
+  function buildChips(d) {
+    if (!d.features.length) return '<span class="feat-empty">No features yet — add some above</span>';
+    return d.features.map(function(f) {
+      return '<span class="feat-chip">' +
+        '<span class="feat-chip-label">' + esc(f.name) + '</span>' +
+        '<button class="feat-chip-del" data-diag="' + d.id + '" data-feat="' + f.id + '">&#215;</button>' +
+      '</span>';
+    }).join('');
+  }
+
+  function buildCardHTML(d) {
+    return '<div class="diagram-card" id="card-' + d.id + '">' +
+      '<div class="dc-header">' +
+        '<input type="text" class="dc-title" id="title-' + d.id + '" value="' + esc(d.name) + '" ' +
+          'placeholder="Diagram title…" maxlength="60" data-diag="' + d.id + '">' +
+        '<button class="dc-del" data-diag="' + d.id + '" title="Delete diagram">&#215;</button>' +
+      '</div>' +
+      '<div class="dc-feat-bar">' +
+        '<div class="dc-feat-add-row">' +
+          '<input type="text" class="dc-feat-input" placeholder="Add feature / axis…" ' +
+            'maxlength="28" data-diag="' + d.id + '">' +
+          '<button class="dc-feat-add" data-diag="' + d.id + '">+</button>' +
+        '</div>' +
+        '<div class="feat-chips" id="chips-' + d.id + '">' + buildChips(d) + '</div>' +
+      '</div>' +
+      '<div class="dc-spider" id="spider-' + d.id + '"></div>' +
+      '<button class="dc-score-toggle" data-diag="' + d.id + '">&#9660; Show scores</button>' +
+      '<div class="dc-scores" id="scores-' + d.id + '"></div>' +
+    '</div>';
+  }
+
+  // ── Spider SVG ───────────────────────────────────────────────────
+  function renderSpiderInCard(d) {
+    var el = get('spider-' + d.id);
+    if (!el) return;
+    var feats = d.features, comps = state.competitors, N = feats.length;
+
+    if (N < 3) {
+      el.innerHTML = '<div class="spider-empty"><p>' +
+        (N === 0 ? 'Add features above to build the spider diagram.'
+                 : 'Add at least 3 features to render the spider.') + '</p></div>';
+      return;
+    }
+    if (!comps.length) {
+      el.innerHTML = '<div class="spider-empty"><p>Add competitors in the panel to see them plotted here.</p></div>';
+      return;
+    }
+
+    var W = 400, H = 430, CX = 200, CY = 195, R = 135;
+
+    function ang(i) { return -Math.PI / 2 + i * (2 * Math.PI / N); }
+    function pt(i, r) { var a = ang(i); return [CX + Math.cos(a) * r, CY + Math.sin(a) * r]; }
+    function pS(i, r) { var p = pt(i, r); return p[0].toFixed(1) + ',' + p[1].toFixed(1); }
+    function toR(v)  { return ((Math.max(1, Math.min(10, +v || 1)) - 1) / 9) * R; }
+    function sc(c, f) {
+      return (d.scores && d.scores[c.id] && d.scores[c.id][f.id] != null) ? d.scores[c.id][f.id] : 5;
+    }
+
+    var rings = [2,4,6,8,10].map(function(s) {
+      var r = toR(s), pts = feats.map(function(_,i){ return pS(i,r); }).join(' ');
+      return '<polygon points="' + pts + '" fill="none" ' +
+        'style="stroke:var(--border' + (s===10?'-bright':'') + ')" stroke-width="' + (s===10?'1.2':'0.6') + '"/>';
+    }).join('');
+
+    var ringLabels = [2,4,6,8,10].map(function(s) {
+      return '<text x="' + (CX+3) + '" y="' + (CY-toR(s)+8) + '" ' +
+        'font-family="IBM Plex Mono,monospace" font-size="7.5" style="fill:var(--ink-soft)" opacity="0.7">' + s + '</text>';
+    }).join('');
+
+    var axes = feats.map(function(f, i) {
+      var outer = pt(i, R), lp = pt(i, R+26);
+      var a = ang(i), cosA = Math.cos(a), sinA = Math.sin(a);
+      var anchor = Math.abs(cosA) < 0.25 ? 'middle' : cosA > 0 ? 'start' : 'end';
+      var dy = sinA > 0.6 ? 13 : sinA < -0.6 ? -4 : 4;
+      var label = f.name.length > 18 ? f.name.slice(0,16) + '…' : f.name;
+      return '<line x1="' + CX + '" y1="' + CY + '" x2="' + outer[0].toFixed(1) + '" y2="' + outer[1].toFixed(1) + '" ' +
+          'style="stroke:var(--border-bright)" stroke-width="1"/>' +
+        '<text x="' + lp[0].toFixed(1) + '" y="' + (lp[1]+dy).toFixed(1) + '" ' +
+          'text-anchor="' + anchor + '" font-family="Inter,sans-serif" font-size="11" font-weight="500" ' +
+          'style="fill:var(--ink)">' + esc(label) + '</text>';
+    }).join('');
+
+    var fills = comps.map(function(c) {
+      var pts = feats.map(function(f,i){ return pS(i,toR(sc(c,f))); }).join(' ');
+      return '<polygon points="' + pts + '" style="fill:' + c.color + '" fill-opacity="0.12" stroke="none"/>';
+    }).join('');
+
+    var strokes = comps.map(function(c) {
+      var pts = feats.map(function(f,i){ return pS(i,toR(sc(c,f))); }).join(' ');
+      return '<polygon points="' + pts + '" fill="none" style="stroke:' + c.color + '" stroke-width="1.8" stroke-linejoin="round"/>';
+    }).join('');
+
+    var dots = comps.map(function(c) {
+      return feats.map(function(f,i) {
+        var p = pt(i, toR(sc(c,f)));
+        return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3" style="fill:' + c.color + '"/>';
+      }).join('');
+    }).join('');
+
+    var LEGEND_Y = H - 16;
+    var spacing = Math.min(110, (W - 20) / comps.length);
+    var legend = comps.map(function(c, i) {
+      var lx = 12 + i * spacing;
+      if (lx > W - 20) return '';
+      var label = c.name.length > 12 ? c.name.slice(0,10)+'…' : c.name;
+      return '<circle cx="' + (lx+4) + '" cy="' + LEGEND_Y + '" r="4.5" style="fill:' + c.color + '"/>' +
+        '<text x="' + (lx+12) + '" y="' + (LEGEND_Y+4) + '" font-family="Inter,sans-serif" font-size="10" style="fill:var(--ink)">' + esc(label) + '</text>';
+    }).join('');
+
+    el.innerHTML = '<svg class="spider-svg" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">' +
+      rings + ringLabels + axes + fills + strokes + dots +
+      '<line x1="10" y1="' + (H-30) + '" x2="' + (W-10) + '" y2="' + (H-30) + '" style="stroke:var(--border)" stroke-width="0.7"/>' +
+      legend + '</svg>';
+  }
+
+  // ── Score table ──────────────────────────────────────────────────
+  function renderScoreTable(d) {
+    var el = get('scores-' + d.id);
+    if (!el) return;
+    var feats = d.features, comps = state.competitors;
+
+    if (!feats.length || !comps.length) {
+      el.innerHTML = '<p class="ca-hint" style="margin:0">Add features and competitors to enter scores.</p>';
+      return;
+    }
+
+    var thead = '<thead><tr><th class="feat-col">Feature</th>' +
+      comps.map(function(c) {
+        return '<th><span class="th-dot" style="background:' + c.color + '"></span>' + esc(c.name) + '</th>';
+      }).join('') + '</tr></thead>';
+
+    var tbody = '<tbody>' + feats.map(function(f) {
+      return '<tr><td class="feat-col">' + esc(f.name) + '</td>' +
+        comps.map(function(c) {
+          var v = (d.scores && d.scores[c.id] && d.scores[c.id][f.id] != null) ? d.scores[c.id][f.id] : 5;
+          return '<td><input type="number" class="score-input" min="1" max="10" step="1" value="' + v + '" ' +
+            'data-diag="' + d.id + '" data-comp="' + c.id + '" data-feat="' + f.id + '"></td>';
+        }).join('') + '</tr>';
+    }).join('') + '</tbody>';
+
+    el.innerHTML = '<div class="score-matrix-wrap"><table class="score-matrix">' + thead + tbody + '</table></div>';
+  }
+
+  // ── Score toggle ──────────────────────────────────────────────────
+  function toggleScores(diagId) {
+    var card = get('card-' + diagId);
+    if (!card) return;
+    var isOpen = card.classList.toggle('scores-open');
+    var btn = card.querySelector('.dc-score-toggle');
+    if (btn) btn.innerHTML = isOpen ? '&#9650; Hide scores' : '&#9660; Show scores';
+    if (isOpen) {
+      var diag = state.diagrams.find(function(d) { return d.id === diagId; });
+      if (diag) renderScoreTable(diag);
+    }
+  }
+
+  // ── Refresh helpers ──────────────────────────────────────────────
+  function refreshAllSpiders() { state.diagrams.forEach(renderSpiderInCard); }
+
+  function refreshOpenScoreTables() {
+    state.diagrams.forEach(function(d) {
+      var card = get('card-' + d.id);
+      if (card && card.classList.contains('scores-open')) renderScoreTable(d);
+    });
+  }
+
+  // ── Render full grid ──────────────────────────────────────────────
+  function renderDiagramsGrid() {
+    get('diagramsGrid').innerHTML = state.diagrams.map(buildCardHTML).join('');
+    state.diagrams.forEach(renderSpiderInCard);
+  }
+
+  // ── Event delegation — competitor panel ──────────────────────────
+  get('competitorList').addEventListener('click', function(e) {
+    var btn = e.target.closest('.ca-del');
+    if (btn && btn.dataset.cid) deleteCompetitor(btn.dataset.cid);
+  });
+
+  get('addCompBtn').addEventListener('click', addCompetitor);
+  get('competitorInput').addEventListener('keydown', function(e) { if (e.key === 'Enter') addCompetitor(); });
+  get('addDiagramBtn').addEventListener('click', addDiagram);
+
+  // ── Event delegation — diagrams grid ─────────────────────────────
+  var grid = get('diagramsGrid');
+
+  grid.addEventListener('click', function(e) {
+    var t = e.target;
+
+    var dcDel = t.closest('.dc-del');
+    if (dcDel && dcDel.dataset.diag) {
+      if (confirm('Delete this diagram?')) deleteDiagram(dcDel.dataset.diag);
+      return;
+    }
+
+    var featAdd = t.closest('.dc-feat-add');
+    if (featAdd && featAdd.dataset.diag) {
+      var diagId = featAdd.dataset.diag;
+      var inp = grid.querySelector('.dc-feat-input[data-diag="' + diagId + '"]');
+      if (inp) { addFeature(diagId, inp.value.trim()); inp.value = ''; inp.focus(); }
+      return;
+    }
+
+    var chipDel = t.closest('.feat-chip-del');
+    if (chipDel && chipDel.dataset.diag) {
+      deleteFeature(chipDel.dataset.diag, chipDel.dataset.feat);
+      return;
+    }
+
+    var scoreToggle = t.closest('.dc-score-toggle');
+    if (scoreToggle && scoreToggle.dataset.diag) {
+      toggleScores(scoreToggle.dataset.diag);
+      return;
+    }
+  });
+
+  grid.addEventListener('input', function(e) {
+    var t = e.target;
+
+    if (t.classList.contains('dc-title') && t.dataset.diag) {
+      var diag = state.diagrams.find(function(d) { return d.id === t.dataset.diag; });
+      if (diag) { diag.name = t.value; save(); }
+      return;
+    }
+
+    if (t.classList.contains('score-input') && t.dataset.diag) {
+      var v = Math.max(1, Math.min(10, Math.round(+t.value) || 5));
+      t.value = v;
+      var dg = state.diagrams.find(function(d) { return d.id === t.dataset.diag; });
+      if (dg) {
+        if (!dg.scores) dg.scores = {};
+        if (!dg.scores[t.dataset.comp]) dg.scores[t.dataset.comp] = {};
+        dg.scores[t.dataset.comp][t.dataset.feat] = v;
+        save();
+        renderSpiderInCard(dg);
+      }
+      return;
+    }
+  });
+
+  grid.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    var t = e.target;
+    if (t.classList.contains('dc-feat-input') && t.dataset.diag) {
+      addFeature(t.dataset.diag, t.value.trim());
+      t.value = '';
+    }
+  });
+
+  // ── Theme ─────────────────────────────────────────────────────────
+  function applyTheme(isLight) {
+    document.documentElement.classList.toggle('light', isLight);
+  }
+  var tt = get('themeToggle');
+  if (localStorage.getItem('prio-theme') === 'light') { tt.checked = true; applyTheme(true); }
+  tt.addEventListener('change', function() {
+    applyTheme(this.checked);
+    localStorage.setItem('prio-theme', this.checked ? 'light' : 'dark');
+  });
+
+  // ── Init ──────────────────────────────────────────────────────────
+  load();
+  renderCompetitorList();
+  renderDiagramsGrid();
+</script>
+</body>
+</html>

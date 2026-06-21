@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pricing Tool · PM Toolkit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="common.css">
+<link rel="stylesheet" href="pricing_tool.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="index.html" class="back-btn" title="Back to toolkit">&#8592;</a>
+      <div class="brand"><span class="brand-mark">&#9670;</span> Pricing Tool</div>
+    </div>
+    <div class="topbar-actions">
+      <label class="theme-toggle" title="Toggle light / dark theme">
+        <span class="t-icon">&#9790;</span>
+        <input type="checkbox" id="themeToggle">
+        <span class="toggle-pill"><span class="toggle-dot"></span></span>
+        <span class="t-icon">&#9728;</span>
+      </label>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="panel">
+      <div class="panel-section">
+        <h2>Tiers</h2>
+        <div id="tierList"></div>
+        <button class="primary-btn" id="addTierBtn">+ Add tier</button>
+      </div>
+
+      <div class="panel-section" id="editSection">
+        <h2 id="editTitle">Edit tier</h2>
+        <div class="field">
+          <label>Name</label>
+          <input type="text" id="eName" placeholder="e.g. Pro">
+        </div>
+        <div class="field">
+          <label>Monthly price ($)</label>
+          <input type="number" id="eMonthly" min="0" step="0.01">
+        </div>
+        <div class="field">
+          <label>Annual price ($) <span style="color:var(--ink-soft);font-size:11px">optional</span></label>
+          <input type="number" id="eAnnual" min="0" step="0.01">
+        </div>
+        <div class="field">
+          <label>Tagline / key feature</label>
+          <input type="text" id="eFeature" placeholder="e.g. Unlimited projects">
+        </div>
+        <div class="field checkbox-field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ink)">
+            <input type="checkbox" id="eHighlight"> Mark as featured
+          </label>
+        </div>
+        <button class="ghost-btn" id="deleteTierBtn" style="width:100%;margin-top:4px">Delete tier</button>
+      </div>
+    </aside>
+
+    <main class="canvas">
+      <p class="section-title">Price ladder</p>
+      <div id="ladderArea"></div>
+      <p class="section-title" style="margin-top:28px">Tier overview</p>
+      <div id="tierCards"></div>
+    </main>
+  </div>
+
+</div>
+<script>
+  var nextId = 1;
+  var tiers = [
+    { id: nextId++, name: 'Free',       monthly: 0,   annual: 0,    feature: 'Up to 5 projects · 1 user',          highlight: false },
+    { id: nextId++, name: 'Starter',    monthly: 29,  annual: 290,  feature: 'Up to 20 projects · 5 users',         highlight: false },
+    { id: nextId++, name: 'Pro',        monthly: 99,  annual: 990,  feature: 'Unlimited projects · 20 users',        highlight: true  },
+    { id: nextId++, name: 'Enterprise', monthly: 499, annual: 4990, feature: 'Custom limits · SSO · SLA support',    highlight: false }
+  ];
+  var selectedId = tiers[2].id;
+
+  function save() { localStorage.setItem('pricing-v1', JSON.stringify({ tiers: tiers, nextId: nextId })); }
+
+  function load() {
+    var d = localStorage.getItem('pricing-v1');
+    if (d) { try { var p = JSON.parse(d); tiers = p.tiers; nextId = p.nextId || nextId; } catch(e) {} }
+  }
+
+  function selectedTier() {
+    return tiers.find(function(t) { return t.id === selectedId; }) || tiers[0];
+  }
+
+  function selectTier(id) {
+    selectedId = id;
+    renderPanel();
+    renderCanvas();
+  }
+
+  function addTier() {
+    var t = { id: nextId++, name: 'New Tier', monthly: 0, annual: 0, feature: '', highlight: false };
+    tiers.push(t);
+    selectedId = t.id;
+    save();
+    renderPanel();
+    renderCanvas();
+  }
+
+  function deleteTier() {
+    if (tiers.length <= 1) return;
+    tiers = tiers.filter(function(t) { return t.id !== selectedId; });
+    selectedId = tiers[0].id;
+    save();
+    renderPanel();
+    renderCanvas();
+  }
+
+  function updateSelected() {
+    var t = selectedTier();
+    if (!t) return;
+    t.name    = document.getElementById('eName').value;
+    t.monthly = +document.getElementById('eMonthly').value || 0;
+    t.annual  = +document.getElementById('eAnnual').value || 0;
+    t.feature = document.getElementById('eFeature').value;
+    t.highlight = document.getElementById('eHighlight').checked;
+    save();
+    renderPanel();
+    renderCanvas();
+  }
+
+  function renderPanel() {
+    var t = selectedTier();
+
+    // Tier list
+    var html = tiers.map(function(tier) {
+      var active = tier.id === selectedId ? ' tier-item--active' : '';
+      return '<div class="tier-item' + active + '" onclick="selectTier(' + tier.id + ')">' +
+        (tier.highlight ? '<span class="tier-dot tier-dot--featured"></span>' : '<span class="tier-dot"></span>') +
+        '<span class="tier-item-name">' + esc(tier.name) + '</span>' +
+        '<span class="tier-item-price">' + (tier.monthly === 0 ? 'Free' : '$' + tier.monthly + '/mo') + '</span>' +
+        '</div>';
+    }).join('');
+    document.getElementById('tierList').innerHTML = html;
+
+    // Edit form
+    if (t) {
+      document.getElementById('editTitle').textContent = 'Edit · ' + t.name;
+      document.getElementById('eName').value     = t.name;
+      document.getElementById('eMonthly').value  = t.monthly;
+      document.getElementById('eAnnual').value   = t.annual;
+      document.getElementById('eFeature').value  = t.feature;
+      document.getElementById('eHighlight').checked = t.highlight;
+    }
+  }
+
+  function renderLadder() {
+    var maxMonthly = Math.max.apply(null, tiers.map(function(t) { return t.monthly; }));
+    if (maxMonthly <= 0) { document.getElementById('ladderArea').innerHTML = ''; return; }
+
+    var W = 480, PL = 90, BAR_W = W - PL - 20, ROW_H = 46, PAD_T = 10;
+    var H = tiers.length * ROW_H + PAD_T * 2;
+
+    var rows = tiers.map(function(t, i) {
+      var y = PAD_T + i * ROW_H + ROW_H / 2;
+      var bw = t.monthly === 0 ? 0 : Math.max(4, (t.monthly / maxMonthly) * BAR_W);
+      var lbl = t.monthly === 0 ? 'Free' : '$' + t.monthly;
+      return '<text x="' + (PL - 8) + '" y="' + y + '" dy="4" text-anchor="end" font-family="Inter,sans-serif" font-size="12" style="fill:var(--ink-soft)">' + esc(t.name) + '</text>' +
+        (t.highlight ? '<rect x="' + PL + '" y="' + (y - 13) + '" width="' + BAR_W + '" height="26" rx="4" style="fill:var(--teal)" fill-opacity="0.05"/>' : '') +
+        (bw > 0 ? '<rect x="' + PL + '" y="' + (y - 11) + '" width="' + bw.toFixed(1) + '" height="22" rx="3" style="fill:var(--teal)" fill-opacity="' + (t.highlight ? '0.8' : '0.45') + '"/>' : '') +
+        '<text x="' + (PL + bw + 8) + '" y="' + y + '" dy="4" font-family="IBM Plex Mono,monospace" font-size="12" font-weight="600" style="fill:var(--teal)">' + lbl + '</text>';
+    }).join('');
+
+    document.getElementById('ladderArea').innerHTML =
+      '<svg class="ladder-svg" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">' +
+      '<line x1="' + PL + '" y1="' + PAD_T + '" x2="' + PL + '" y2="' + (H - PAD_T) + '" style="stroke:var(--border-bright)" stroke-width="1"/>' +
+      rows + '</svg>';
+  }
+
+  function renderCards() {
+    var html = '<div class="tier-cards">' + tiers.map(function(t) {
+      var saving = '';
+      if (t.annual > 0 && t.monthly > 0 && t.annual < t.monthly * 12) {
+        var pct = Math.round((1 - t.annual / (t.monthly * 12)) * 100);
+        saving = '<div class="tier-saving">$' + t.annual + '/yr &mdash; save ' + pct + '%</div>';
+      }
+      return '<div class="tier-card' + (t.highlight ? ' tier-card--featured' : '') + '">' +
+        (t.highlight ? '<div class="tier-badge">Featured</div>' : '') +
+        '<div class="tier-name">' + esc(t.name) + '</div>' +
+        '<div class="tier-price">' +
+          (t.monthly === 0 ? '<span class="tier-amount">Free</span>' :
+            '<span class="tier-currency">$</span><span class="tier-amount">' + t.monthly + '</span><span class="tier-period">/mo</span>') +
+        '</div>' +
+        saving +
+        '<div class="tier-feature">' + esc(t.feature) + '</div>' +
+        '</div>';
+    }).join('') + '</div>';
+    document.getElementById('tierCards').innerHTML = html;
+  }
+
+  function renderCanvas() { renderLadder(); renderCards(); }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // Edit listeners
+  ['eName','eMonthly','eAnnual','eFeature'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', updateSelected);
+  });
+  document.getElementById('eHighlight').addEventListener('change', updateSelected);
+  document.getElementById('addTierBtn').addEventListener('click', addTier);
+  document.getElementById('deleteTierBtn').addEventListener('click', deleteTier);
+
+  // Theme
+  function applyTheme(isLight) {
+    document.documentElement.classList.toggle('light', isLight);
+  }
+  var tt = document.getElementById('themeToggle');
+  var saved = localStorage.getItem('prio-theme');
+  if (saved === 'light') { tt.checked = true; applyTheme(true); }
+  tt.addEventListener('change', function() {
+    applyTheme(this.checked);
+    localStorage.setItem('prio-theme', this.checked ? 'light' : 'dark');
+  });
+
+  load();
+  selectedId = tiers[0] ? tiers[0].id : 1;
+  tiers.forEach(function(t) { if (t.highlight) selectedId = t.id; });
+  renderPanel();
+  renderCanvas();
+</script>
+</body>
+</html>

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Porter's 5 Forces · PM Toolkit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="common.css">
+<link rel="stylesheet" href="forces_tool.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="index.html" class="back-btn" title="Back to toolkit">&#8592;</a>
+      <div class="brand"><span class="brand-mark">&#9670;</span> Porter&#8217;s 5 Forces</div>
+    </div>
+    <div class="topbar-actions">
+      <label class="theme-toggle" title="Toggle light / dark theme">
+        <span class="t-icon">&#9790;</span>
+        <input type="checkbox" id="themeToggle">
+        <span class="toggle-pill"><span class="toggle-dot"></span></span>
+        <span class="t-icon">&#9728;</span>
+      </label>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="panel">
+      <h2>Forces</h2>
+      <div id="forcesPanel"></div>
+    </aside>
+
+    <main class="canvas">
+      <div class="forces-canvas">
+        <div class="forces-left">
+          <p class="section-title">Hub diagram</p>
+          <div id="hubArea"></div>
+          <div id="intensityArea" style="margin-top:16px"></div>
+        </div>
+        <div class="forces-right">
+          <p class="section-title">Radar</p>
+          <div id="radarArea"></div>
+          <p class="section-title" style="margin-top:24px">Summary</p>
+          <div id="summaryArea"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+</div>
+<script>
+  var FORCES = [
+    { key:'rivalry',  label:'Competitive Rivalry',    short:'Rivalry',    color:'plum'  },
+    { key:'buyer',    label:'Buyer Power',             short:'Buyers',     color:'teal'  },
+    { key:'subs',     label:'Threat of Substitutes',  short:'Substitutes',color:'coral' },
+    { key:'entrants', label:'Threat of New Entrants', short:'Entrants',   color:'amber' },
+    { key:'supplier', label:'Supplier Power',          short:'Suppliers',  color:'slate' }
+  ];
+
+  var CSS_COLORS = { plum:'var(--plum)', teal:'var(--teal)', coral:'var(--coral)', amber:'var(--amber)', slate:'var(--slate)' };
+
+  var state = {};
+  FORCES.forEach(function(f) { state[f.key] = { score: 5, notes: '' }; });
+
+  function save() { localStorage.setItem('forces-v1', JSON.stringify(state)); }
+  function load() {
+    var d = localStorage.getItem('forces-v1');
+    if (d) { try { var p = JSON.parse(d); Object.keys(p).forEach(function(k) { if (state[k]) Object.assign(state[k], p[k]); }); } catch(e) {} }
+  }
+
+  function levelLabel(s) {
+    return s <= 3 ? 'Low' : s <= 6 ? 'Medium' : s <= 8 ? 'High' : 'Very High';
+  }
+
+  function levelColor(s) {
+    return s <= 3 ? 'var(--teal)' : s <= 6 ? 'var(--amber)' : 'var(--coral)';
+  }
+
+  function buildPanel() {
+    var html = FORCES.map(function(f) {
+      var s = state[f.key];
+      var col = CSS_COLORS[f.color];
+      return '<div class="force-block">' +
+        '<div class="force-head" style="border-left-color:' + col + '">' +
+          '<span class="force-dot" style="background:' + col + '"></span>' +
+          '<span class="force-name">' + f.label + '</span>' +
+          '<span class="score-chip" id="chip-' + f.key + '" style="color:' + levelColor(s.score) + '">' + s.score + ' · ' + levelLabel(s.score) + '</span>' +
+        '</div>' +
+        '<div class="force-body">' +
+          '<div class="slider-row"><input type="range" id="score-' + f.key + '" min="1" max="10" step="1" value="' + s.score + '"><span class="slider-val" id="sv-' + f.key + '">' + s.score + '</span></div>' +
+          '<textarea id="notes-' + f.key + '" placeholder="Key drivers, evidence, context…">' + esc(s.notes) + '</textarea>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    document.getElementById('forcesPanel').innerHTML = html;
+
+    FORCES.forEach(function(f) {
+      document.getElementById('score-' + f.key).addEventListener('input', function() {
+        state[f.key].score = +this.value;
+        document.getElementById('sv-' + f.key).textContent = this.value;
+        var chip = document.getElementById('chip-' + f.key);
+        chip.textContent = this.value + ' · ' + levelLabel(+this.value);
+        chip.style.color = levelColor(+this.value);
+        save(); renderCanvas();
+      });
+      document.getElementById('notes-' + f.key).addEventListener('input', function() {
+        state[f.key].notes = this.value;
+        save(); renderSummary();
+      });
+    });
+  }
+
+  function renderHub() {
+    var cx = 160, cy = 160, CR = 36, OR = 90, W = 320, H = 320;
+    var N = FORCES.length;
+    var step = (2 * Math.PI) / N;
+    // Rivalry is first (key='rivalry'), place at top for hub diagram
+    var svg = '<svg class="hub-svg" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">';
+    svg += '<defs><filter id="hg" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
+
+    FORCES.forEach(function(f, i) {
+      var angle = -Math.PI/2 + i * step;
+      var ox = cx + OR * Math.cos(angle);
+      var oy = cy + OR * Math.sin(angle);
+      var s  = state[f.key].score;
+      var col = CSS_COLORS[f.color];
+      var nr  = 8 + s * 2.5; // node radius scales with score
+      var lw  = 0.5 + s * 0.25; // line width scales with score
+
+      // Spoke line
+      svg += '<line x1="' + cx + '" y1="' + cy + '" x2="' + ox.toFixed(1) + '" y2="' + oy.toFixed(1) + '" style="stroke:' + col + '" stroke-opacity="0.35" stroke-width="' + lw.toFixed(1) + '"/>';
+      // Outer node
+      svg += '<circle cx="' + ox.toFixed(1) + '" cy="' + oy.toFixed(1) + '" r="' + nr.toFixed(1) + '" style="fill:' + col + '" fill-opacity="0.25" filter="url(#hg)"/>';
+      svg += '<circle cx="' + ox.toFixed(1) + '" cy="' + oy.toFixed(1) + '" r="' + (nr*0.45).toFixed(1) + '" style="fill:' + col + '" fill-opacity="0.8"/>';
+      // Label
+      var lx = cx + (OR + nr + 12) * Math.cos(angle);
+      var ly = cy + (OR + nr + 12) * Math.sin(angle);
+      var anchor = Math.cos(angle) > 0.1 ? 'start' : Math.cos(angle) < -0.1 ? 'end' : 'middle';
+      svg += '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" dy="4" text-anchor="' + anchor + '" font-family="Space Grotesk,sans-serif" font-size="10" font-weight="600" style="fill:' + col + '">' + f.short + '</text>';
+    });
+
+    // Center node
+    var avg = FORCES.reduce(function(a, f) { return a + state[f.key].score; }, 0) / N;
+    var cCol = levelColor(avg);
+    svg += '<circle cx="' + cx + '" cy="' + cy + '" r="' + CR + '" style="fill:var(--surface)" stroke-width="1.5" style2="stroke:' + cCol + '"/>';
+    svg += '<circle cx="' + cx + '" cy="' + cy + '" r="' + CR + '" fill="none" style="stroke:' + cCol + '" stroke-width="1.5"/>';
+    svg += '<text x="' + cx + '" y="' + (cy - 5) + '" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="18" font-weight="700" style="fill:' + cCol + '">' + avg.toFixed(1) + '</text>';
+    svg += '<text x="' + cx + '" y="' + (cy + 11) + '" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" style="fill:var(--ink-soft)">avg</text>';
+    svg += '</svg>';
+    document.getElementById('hubArea').innerHTML = svg;
+
+    // Intensity indicator
+    var lvl = levelLabel(avg);
+    document.getElementById('intensityArea').innerHTML =
+      '<div class="intensity-bar"><div class="intensity-fill" style="width:' + (avg/10*100).toFixed(0) + '%;background:' + cCol + '"></div></div>' +
+      '<div class="intensity-label" style="color:' + cCol + '">Competitive intensity: <strong>' + lvl + '</strong> (' + avg.toFixed(1) + '/10)</div>';
+  }
+
+  function renderRadar() {
+    var N = FORCES.length;
+    var cx = 130, cy = 130, r = 95;
+    var step = (2 * Math.PI) / N;
+
+    function pt(i, v) {
+      var angle = -Math.PI/2 + i * step;
+      var d = r * v / 10;
+      return { x: cx + d * Math.cos(angle), y: cy + d * Math.sin(angle) };
+    }
+    function gPath(frac) {
+      var pts = [];
+      for (var i = 0; i < N; i++) {
+        var angle = -Math.PI/2 + i * step;
+        pts.push((cx + r * frac * Math.cos(angle)).toFixed(1) + ',' + (cy + r * frac * Math.sin(angle)).toFixed(1));
+      }
+      return 'M ' + pts.join(' L ') + ' Z';
+    }
+
+    var scores = FORCES.map(function(f) { return state[f.key].score; });
+    var dPath = 'M ' + scores.map(function(v, i) { var p = pt(i, v); return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' L ') + ' Z';
+
+    var grids = [2,4,6,8,10].map(function(v) {
+      return '<path d="' + gPath(v/10) + '" fill="none" style="stroke:var(--border)" stroke-width="' + (v===10?'1':'0.5') + '"/>' +
+        '<text x="' + (cx + 3) + '" y="' + (cy - r*v/10 - 2) + '" font-family="IBM Plex Mono,monospace" font-size="8" style="fill:var(--ink-soft)">' + v + '</text>';
+    }).join('');
+
+    var axes = FORCES.map(function(f, i) {
+      var angle = -Math.PI/2 + i * step;
+      var x2 = (cx + r * Math.cos(angle)).toFixed(1);
+      var y2 = (cy + r * Math.sin(angle)).toFixed(1);
+      var lx = (cx + (r + 16) * Math.cos(angle)).toFixed(1);
+      var ly = (cy + (r + 16) * Math.sin(angle)).toFixed(1);
+      var anchor = Math.cos(angle) > 0.1 ? 'start' : Math.cos(angle) < -0.1 ? 'end' : 'middle';
+      var col = CSS_COLORS[f.color];
+      return '<line x1="' + cx + '" y1="' + cy + '" x2="' + x2 + '" y2="' + y2 + '" style="stroke:var(--border)" stroke-width="0.8"/>' +
+        '<text x="' + lx + '" y="' + ly + '" dy="4" text-anchor="' + anchor + '" font-family="Space Grotesk,sans-serif" font-size="10" font-weight="600" style="fill:' + col + '">' + f.short + '</text>';
+    }).join('');
+
+    var svg = '<svg class="radar-svg" viewBox="0 0 260 260" xmlns="http://www.w3.org/2000/svg">' +
+      grids + axes +
+      '<path d="' + dPath + '" style="fill:var(--coral);stroke:var(--coral)" fill-opacity="0.15" stroke-width="1.8"/>' +
+      scores.map(function(v, i) {
+        var p = pt(i, v);
+        var col = CSS_COLORS[FORCES[i].color];
+        return '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="4" style="fill:' + col + '"/>';
+      }).join('') +
+      '</svg>';
+    document.getElementById('radarArea').innerHTML = svg;
+  }
+
+  function renderSummary() {
+    var html = '<table class="summary-table"><thead><tr>' +
+      '<th>Force</th><th>Score</th><th>Level</th><th>Notes</th>' +
+      '</tr></thead><tbody>' +
+      FORCES.map(function(f) {
+        var s = state[f.key];
+        var col = CSS_COLORS[f.color];
+        var lvlCol = levelColor(s.score);
+        return '<tr>' +
+          '<td style="font-weight:600;color:' + col + '">' + f.label + '</td>' +
+          '<td style="font-family:var(--font-mono);font-weight:700;color:' + lvlCol + '">' + s.score + '/10</td>' +
+          '<td><span class="level-chip" style="color:' + lvlCol + ';border-color:' + lvlCol + '">' + levelLabel(s.score) + '</span></td>' +
+          '<td class="notes-cell">' + esc(s.notes || '—') + '</td>' +
+          '</tr>';
+      }).join('') +
+      '</tbody></table>';
+    document.getElementById('summaryArea').innerHTML = html;
+  }
+
+  function renderCanvas() { renderHub(); renderRadar(); renderSummary(); }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // Theme
+  function applyTheme(isLight) {
+    document.documentElement.classList.toggle('light', isLight);
+  }
+  var tt = document.getElementById('themeToggle');
+  var sv = localStorage.getItem('prio-theme');
+  if (sv === 'light') { tt.checked = true; applyTheme(true); }
+  tt.addEventListener('change', function() {
+    applyTheme(this.checked);
+    localStorage.setItem('prio-theme', this.checked ? 'light' : 'dark');
+  });
+
+  load();
+  buildPanel();
+  renderCanvas();
+</script>
+</body>
+</html>

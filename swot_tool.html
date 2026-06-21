@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SWOT Analysis · PM Toolkit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="common.css">
+<link rel="stylesheet" href="swot_tool.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="index.html" class="back-btn" id="backToIndex" title="Back to toolkit">&#8592;</a>
+      <button class="back-btn" id="backBtn" title="All analyses" onclick="closeProject()">&#8592;</button>
+      <div class="brand"><span class="brand-mark">&#9670;</span> SWOT Analysis</div>
+    </div>
+    <div class="swot-name-wrap" id="nameWrap">
+      <input type="text" id="projectName" class="project-name-input" placeholder="Analysis name…" maxlength="80">
+    </div>
+    <div class="topbar-actions">
+      <button class="ghost-btn" id="clearBtn">Clear all</button>
+      <label class="theme-toggle" title="Toggle light / dark theme">
+        <span class="t-icon">&#9790;</span>
+        <input type="checkbox" id="themeToggle">
+        <span class="toggle-pill"><span class="toggle-dot"></span></span>
+        <span class="t-icon">&#9728;</span>
+      </label>
+    </div>
+  </header>
+
+  <!-- View 1: project hub -->
+  <div id="viewProjects" class="view">
+    <div class="project-hub">
+      <div class="hub-header">
+        <span class="hub-heading">Your analyses</span>
+        <button class="ghost-btn" id="newProjectBtn" onclick="newProject()">+ New analysis</button>
+      </div>
+      <div class="project-grid" id="projectGrid"></div>
+    </div>
+  </div>
+
+  <!-- View 2: SWOT editor -->
+  <div id="viewSwot" class="view">
+    <main class="swot-grid">
+
+      <div class="swot-cell cell-s">
+        <div class="cell-header">
+          <span class="cell-label">Strengths</span>
+          <span class="cell-sub">Internal &middot; Positive</span>
+          <span class="cell-count" id="count-s">0</span>
+        </div>
+        <div class="cell-items" id="items-s"></div>
+        <div class="cell-input">
+          <input type="text" class="item-input" id="input-s" placeholder="Add strength…" maxlength="200">
+          <button class="add-btn" data-key="s">+</button>
+        </div>
+      </div>
+
+      <div class="swot-cell cell-w">
+        <div class="cell-header">
+          <span class="cell-label">Weaknesses</span>
+          <span class="cell-sub">Internal &middot; Negative</span>
+          <span class="cell-count" id="count-w">0</span>
+        </div>
+        <div class="cell-items" id="items-w"></div>
+        <div class="cell-input">
+          <input type="text" class="item-input" id="input-w" placeholder="Add weakness…" maxlength="200">
+          <button class="add-btn" data-key="w">+</button>
+        </div>
+      </div>
+
+      <div class="swot-cell cell-o">
+        <div class="cell-header">
+          <span class="cell-label">Opportunities</span>
+          <span class="cell-sub">External &middot; Positive</span>
+          <span class="cell-count" id="count-o">0</span>
+        </div>
+        <div class="cell-items" id="items-o"></div>
+        <div class="cell-input">
+          <input type="text" class="item-input" id="input-o" placeholder="Add opportunity…" maxlength="200">
+          <button class="add-btn" data-key="o">+</button>
+        </div>
+      </div>
+
+      <div class="swot-cell cell-t">
+        <div class="cell-header">
+          <span class="cell-label">Threats</span>
+          <span class="cell-sub">External &middot; Negative</span>
+          <span class="cell-count" id="count-t">0</span>
+        </div>
+        <div class="cell-items" id="items-t"></div>
+        <div class="cell-input">
+          <input type="text" class="item-input" id="input-t" placeholder="Add threat…" maxlength="200">
+          <button class="add-btn" data-key="t">+</button>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+</div>
+
+<script>
+  var KEYS = ['s', 'w', 'o', 't'];
+  var STORAGE_KEY = 'swot-v2';
+
+  var state = { projects: [], activeId: null };
+
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+  }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function load() {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try { Object.assign(state, JSON.parse(raw)); } catch(e) {}
+    }
+    // Migrate from swot-v1 (single project)
+    if (!Array.isArray(state.projects)) {
+      state.projects = [];
+      var old = localStorage.getItem('swot-v1');
+      if (old) {
+        try {
+          var o = JSON.parse(old);
+          if (o.s || o.w || o.o || o.t) {
+            state.projects.push({
+              id: uid(),
+              name: o.project || 'Imported analysis',
+              s: o.s || [], w: o.w || [], o: o.o || [], t: o.t || []
+            });
+          }
+        } catch(e) {}
+      }
+      state.activeId = null;
+      save();
+    }
+  }
+
+  function activeProject() {
+    return state.projects.find(function(p) { return p.id === state.activeId; }) || null;
+  }
+
+  // ── View switching ───────────────────────────────────────────────
+
+  function showView(which) {
+    var inSwot = which === 'swot';
+    document.getElementById('viewProjects').classList.toggle('active', !inSwot);
+    document.getElementById('viewSwot').classList.toggle('active', inSwot);
+    document.getElementById('backToIndex').style.display = inSwot ? 'none' : '';
+    document.getElementById('backBtn').style.display     = inSwot ? '' : 'none';
+    document.getElementById('nameWrap').style.display    = inSwot ? '' : 'none';
+    document.getElementById('clearBtn').style.display    = inSwot ? '' : 'none';
+  }
+
+  // ── Project list ─────────────────────────────────────────────────
+
+  function newProject() {
+    var p = { id: uid(), name: '', s: [], w: [], o: [], t: [] };
+    state.projects.push(p);
+    save();
+    openProject(p.id);
+    setTimeout(function() { document.getElementById('projectName').focus(); }, 50);
+  }
+
+  function deleteProject(id, evt) {
+    evt.stopPropagation();
+    var p = state.projects.find(function(p) { return p.id === id; });
+    var name = (p && p.name) ? p.name : 'this analysis';
+    if (!confirm('Delete "' + name + '"?')) return;
+    state.projects = state.projects.filter(function(p) { return p.id !== id; });
+    save();
+    renderProjects();
+  }
+
+  function renderProjects() {
+    var grid = document.getElementById('projectGrid');
+    var tiles = state.projects.map(function(p) {
+      var total = KEYS.reduce(function(n, k) { return n + (p[k] || []).length; }, 0);
+      var quadColors = { s:'teal', w:'coral', o:'amber', t:'plum' };
+      var mini = KEYS.map(function(k) {
+        return '<div class="mini-quad mini-' + k + '">' +
+          '<span class="mini-label">' + k.toUpperCase() + '</span>' +
+          '<span class="mini-count">' + (p[k] || []).length + '</span>' +
+        '</div>';
+      }).join('');
+      return '<div class="project-tile" onclick="openProject(\'' + p.id + '\')">' +
+        '<div class="ptile-header">' +
+          '<span class="ptile-name">' + esc(p.name || 'Untitled analysis') + '</span>' +
+          '<button class="ptile-del" onclick="deleteProject(\'' + p.id + '\', event)" title="Delete">&#215;</button>' +
+        '</div>' +
+        '<div class="swot-mini">' + mini + '</div>' +
+        '<div class="ptile-footer">' +
+          '<span class="ptile-total">' + total + ' item' + (total !== 1 ? 's' : '') + '</span>' +
+          '<span class="ptile-open">Open &#8594;</span>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    // Always append the "+ New" tile
+    tiles += '<div class="project-tile project-tile--new" onclick="newProject()">' +
+      '<span class="ptile-new-icon">+</span>' +
+      '<span>New analysis</span>' +
+    '</div>';
+
+    grid.innerHTML = tiles;
+  }
+
+  // ── SWOT editor ──────────────────────────────────────────────────
+
+  function openProject(id) {
+    state.activeId = id;
+    showView('swot');
+    renderAll();
+  }
+
+  function closeProject() {
+    state.activeId = null;
+    showView('projects');
+    renderProjects();
+  }
+
+  function addItem(key) {
+    var proj = activeProject();
+    if (!proj) return;
+    var inp = document.getElementById('input-' + key);
+    var text = inp.value.trim();
+    if (!text) return;
+    proj[key].push({ id: Date.now() + Math.random(), text: text });
+    inp.value = '';
+    save();
+    renderItems(key);
+  }
+
+  function removeItem(key, id) {
+    var proj = activeProject();
+    if (!proj) return;
+    proj[key] = proj[key].filter(function(item) { return item.id !== id; });
+    save();
+    renderItems(key);
+  }
+
+  function renderItems(key) {
+    var proj = activeProject();
+    var el = document.getElementById('items-' + key);
+    var cnt = document.getElementById('count-' + key);
+    var items = (proj && proj[key]) ? proj[key] : [];
+    el.innerHTML = items.map(function(item) {
+      return '<div class="item-pill">' +
+        '<span class="item-text">' + esc(item.text) + '</span>' +
+        '<button class="item-del" onclick="removeItem(\'' + key + '\',' + item.id + ')">&#215;</button>' +
+      '</div>';
+    }).join('');
+    cnt.textContent = items.length;
+  }
+
+  function renderAll() {
+    var proj = activeProject();
+    KEYS.forEach(renderItems);
+    document.getElementById('projectName').value = (proj && proj.name) ? proj.name : '';
+  }
+
+  // ── Event wiring ─────────────────────────────────────────────────
+
+  KEYS.forEach(function(key) {
+    document.getElementById('input-' + key).addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') addItem(key);
+    });
+  });
+
+  document.querySelectorAll('.add-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { addItem(this.dataset.key); });
+  });
+
+  document.getElementById('projectName').addEventListener('input', function() {
+    var proj = activeProject();
+    if (proj) { proj.name = this.value; save(); }
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', function() {
+    var proj = activeProject();
+    if (!proj) return;
+    if (!confirm('Clear all items in this analysis?')) return;
+    KEYS.forEach(function(k) { proj[k] = []; });
+    save();
+    renderAll();
+  });
+
+  // ── Theme ────────────────────────────────────────────────────────
+
+  function applyTheme(isLight) {
+    document.documentElement.classList.toggle('light', isLight);
+  }
+  var tt = document.getElementById('themeToggle');
+  var saved = localStorage.getItem('prio-theme');
+  if (saved === 'light') { tt.checked = true; applyTheme(true); }
+  tt.addEventListener('change', function() {
+    applyTheme(this.checked);
+    localStorage.setItem('prio-theme', this.checked ? 'light' : 'dark');
+  });
+
+  // ── Init ─────────────────────────────────────────────────────────
+
+  load();
+  showView('projects');
+  renderProjects();
+</script>
+</body>
+</html>

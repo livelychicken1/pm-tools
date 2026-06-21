@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PESTLE Analysis · PM Toolkit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="common.css">
+<link rel="stylesheet" href="pestle_tool.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="index.html" class="back-btn" title="Back to toolkit">&#8592;</a>
+      <div class="brand"><span class="brand-mark">&#9670;</span> PESTLE Analysis</div>
+    </div>
+    <div class="topbar-actions">
+      <label class="theme-toggle" title="Toggle light / dark theme">
+        <span class="t-icon">&#9790;</span>
+        <input type="checkbox" id="themeToggle">
+        <span class="toggle-pill"><span class="toggle-dot"></span></span>
+        <span class="t-icon">&#9728;</span>
+      </label>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="panel">
+      <h2>Factors</h2>
+      <div id="factorPanel"></div>
+    </aside>
+
+    <main class="canvas">
+      <div class="pestle-canvas">
+        <div class="pestle-left">
+          <p class="section-title">Impact radar</p>
+          <div id="radarArea"></div>
+        </div>
+        <div class="pestle-right">
+          <p class="section-title">Summary</p>
+          <div id="summaryArea"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+</div>
+<script>
+  var FACTORS = [
+    { key:'p',   label:'Political',     letter:'P', color:'teal',  hint:'Government policies, regulation, trade, stability' },
+    { key:'e',   label:'Economic',      letter:'E', color:'amber', hint:'Growth rates, inflation, exchange rates, employment' },
+    { key:'s',   label:'Social',        letter:'S', color:'coral', hint:'Demographics, lifestyle, culture, education, attitudes' },
+    { key:'t',   label:'Technological', letter:'T', color:'plum',  hint:'R&D, automation, tech incentives, emerging tech' },
+    { key:'l',   label:'Legal',         letter:'L', color:'slate', hint:'Employment law, IP, health & safety, industry rules' },
+    { key:'env', label:'Environmental', letter:'E', color:'teal',  hint:'Climate change, environmental policies, sustainability' }
+  ];
+
+  var state = {};
+  FACTORS.forEach(function(f) {
+    state[f.key] = { impact: 3, trend: 0, notes: '' };
+  });
+
+  var CSS_COLORS = { teal:'var(--teal)', amber:'var(--amber)', coral:'var(--coral)', plum:'var(--plum)', slate:'var(--slate)' };
+
+  function save() { localStorage.setItem('pestle-v1', JSON.stringify(state)); }
+  function load() {
+    var d = localStorage.getItem('pestle-v1');
+    if (d) { try { var p = JSON.parse(d); Object.keys(p).forEach(function(k) { if (state[k]) Object.assign(state[k], p[k]); }); } catch(e) {} }
+  }
+
+  function buildPanel() {
+    var html = FACTORS.map(function(f) {
+      var s = state[f.key];
+      var col = CSS_COLORS[f.color];
+      return '<div class="factor-block">' +
+        '<div class="factor-head" style="border-left-color:' + col + '">' +
+          '<span class="factor-letter" style="color:' + col + '">' + f.letter + '</span>' +
+          '<span class="factor-name">' + f.label + '</span>' +
+          '<span class="impact-badge" id="badge-' + f.key + '" style="background:' + col + ';color:var(--bg)">' + s.impact + '</span>' +
+        '</div>' +
+        '<div class="factor-body">' +
+          '<label class="factor-label">Impact <span style="color:var(--ink-soft);font-size:10px">(1 = Low · 5 = High)</span></label>' +
+          '<div class="slider-row"><input type="range" id="impact-' + f.key + '" min="1" max="5" step="1" value="' + s.impact + '"><span class="slider-val" id="iv-' + f.key + '">' + s.impact + '</span></div>' +
+          '<label class="factor-label" style="margin-top:8px">Trend</label>' +
+          '<div class="trend-row">' +
+            '<button class="trend-btn' + (s.trend === -1 ? ' active' : '') + '" data-key="' + f.key + '" data-val="-1">&#8600; Negative</button>' +
+            '<button class="trend-btn' + (s.trend ===  0 ? ' active' : '') + '" data-key="' + f.key + '" data-val="0">&#8594; Neutral</button>' +
+            '<button class="trend-btn' + (s.trend ===  1 ? ' active' : '') + '" data-key="' + f.key + '" data-val="1">&#8599; Positive</button>' +
+          '</div>' +
+          '<label class="factor-label" style="margin-top:8px">Notes</label>' +
+          '<textarea id="notes-' + f.key + '" placeholder="' + f.hint + '">' + esc(s.notes) + '</textarea>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    document.getElementById('factorPanel').innerHTML = html;
+
+    // Listeners
+    FACTORS.forEach(function(f) {
+      document.getElementById('impact-' + f.key).addEventListener('input', function() {
+        state[f.key].impact = +this.value;
+        document.getElementById('iv-' + f.key).textContent = this.value;
+        document.getElementById('badge-' + f.key).textContent = this.value;
+        save(); renderCanvas();
+      });
+      document.getElementById('notes-' + f.key).addEventListener('input', function() {
+        state[f.key].notes = this.value;
+        save(); renderSummary();
+      });
+    });
+
+    document.querySelectorAll('.trend-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var key = this.dataset.key, v = +this.dataset.val;
+        state[key].trend = v;
+        this.closest('.trend-row').querySelectorAll('.trend-btn').forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+        save(); renderSummary();
+      });
+    });
+  }
+
+  function renderRadar() {
+    var N = FACTORS.length;
+    var cx = 160, cy = 155, r = 110;
+    var step = (2 * Math.PI) / N;
+
+    function pt(i, v, maxV) {
+      var angle = -Math.PI/2 + i * step;
+      var d = r * v / maxV;
+      return { x: cx + d * Math.cos(angle), y: cy + d * Math.sin(angle) };
+    }
+    function gPath(frac) {
+      var pts = [];
+      for (var i = 0; i < N; i++) {
+        var angle = -Math.PI/2 + i * step;
+        pts.push((cx + r * frac * Math.cos(angle)).toFixed(1) + ',' + (cy + r * frac * Math.sin(angle)).toFixed(1));
+      }
+      return 'M ' + pts.join(' L ') + ' Z';
+    }
+
+    var scores = FACTORS.map(function(f) { return state[f.key].impact; });
+    var dPath = 'M ' + scores.map(function(v, i) { var p = pt(i, v, 5); return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' L ') + ' Z';
+
+    var grids = [1,2,3,4,5].map(function(v) {
+      return '<path d="' + gPath(v/5) + '" fill="none" style="stroke:var(--border)" stroke-width="' + (v===5?'1':'0.5') + '"/>' +
+        (v < 5 ? '' : '') +
+        '<text x="' + (cx+2) + '" y="' + (cy - r*v/5 - 3) + '" font-family="IBM Plex Mono,monospace" font-size="9" style="fill:var(--ink-soft)">' + v + '</text>';
+    }).join('');
+
+    var axes = FACTORS.map(function(f, i) {
+      var angle = -Math.PI/2 + i * step;
+      var x2 = (cx + r * Math.cos(angle)).toFixed(1);
+      var y2 = (cy + r * Math.sin(angle)).toFixed(1);
+      var lx = (cx + (r + 22) * Math.cos(angle)).toFixed(1);
+      var ly = (cy + (r + 22) * Math.sin(angle)).toFixed(1);
+      var anchor = Math.cos(angle) > 0.1 ? 'start' : Math.cos(angle) < -0.1 ? 'end' : 'middle';
+      var col = CSS_COLORS[f.color];
+      return '<line x1="' + cx + '" y1="' + cy + '" x2="' + x2 + '" y2="' + y2 + '" style="stroke:var(--border)" stroke-width="0.8"/>' +
+        '<text x="' + lx + '" y="' + ly + '" dy="4" text-anchor="' + anchor + '" font-family="Space Grotesk,sans-serif" font-size="11" font-weight="700" style="fill:' + col + '">' + f.letter + ' ' + f.label + '</text>';
+    }).join('');
+
+    var svg = '<svg class="radar-svg" viewBox="0 0 320 310" xmlns="http://www.w3.org/2000/svg">' +
+      grids + axes +
+      '<path d="' + dPath + '" style="fill:var(--plum);stroke:var(--plum)" fill-opacity="0.2" stroke-width="1.8"/>' +
+      scores.map(function(v, i) {
+        var p = pt(i, v, 5);
+        return '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="4" style="fill:var(--plum)"/>';
+      }).join('') +
+      '</svg>';
+    document.getElementById('radarArea').innerHTML = svg;
+  }
+
+  function renderSummary() {
+    var trendLabel = { '-1': '&#8600; Neg', '0': '&#8594; Neutral', '1': '&#8599; Pos' };
+    var html = '<table class="summary-table"><thead><tr>' +
+      '<th>Factor</th><th>Impact</th><th>Trend</th><th>Notes</th>' +
+      '</tr></thead><tbody>' +
+      FACTORS.map(function(f) {
+        var s = state[f.key];
+        var col = CSS_COLORS[f.color];
+        var stars = '';
+        for (var i = 0; i < 5; i++) stars += '<span style="color:' + (i < s.impact ? col : 'var(--border-bright)') + '">&#9679;</span>';
+        return '<tr>' +
+          '<td><span class="f-letter" style="color:' + col + '">' + f.letter + '</span> ' + f.label + '</td>' +
+          '<td class="impact-dots">' + stars + '</td>' +
+          '<td>' + (trendLabel[s.trend] || '—') + '</td>' +
+          '<td class="notes-cell">' + esc(s.notes || '—') + '</td>' +
+          '</tr>';
+      }).join('') +
+      '</tbody></table>';
+    document.getElementById('summaryArea').innerHTML = html;
+  }
+
+  function renderCanvas() { renderRadar(); renderSummary(); }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // Theme
+  function applyTheme(isLight) {
+    document.documentElement.classList.toggle('light', isLight);
+  }
+  var tt = document.getElementById('themeToggle');
+  var sv = localStorage.getItem('prio-theme');
+  if (sv === 'light') { tt.checked = true; applyTheme(true); }
+  tt.addEventListener('change', function() {
+    applyTheme(this.checked);
+    localStorage.setItem('prio-theme', this.checked ? 'light' : 'dark');
+  });
+
+  load();
+  buildPanel();
+  renderCanvas();
+</script>
+</body>
+</html>

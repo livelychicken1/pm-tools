@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Price Sensitivity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="price_tool.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="index.html" class="back-btn" title="Back to toolkit">&#8592;</a>
+      <div class="brand"><span class="brand-mark">&#9670;</span> Price Sensitivity</div>
+    </div>
+    <div class="topbar-actions">
+      <label class="theme-toggle" title="Toggle light / dark theme">
+        <span class="t-icon">&#9790;</span>
+        <input type="checkbox" id="themeToggle">
+        <span class="toggle-pill"><span class="toggle-dot"></span></span>
+        <span class="t-icon">&#9728;</span>
+      </label>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="panel">
+
+      <section class="compose">
+        <h2>Inputs</h2>
+        <div class="field">
+          <label for="priceInput">Current price</label>
+          <input type="number" id="priceInput" value="100" min="0.01" step="any">
+        </div>
+        <div class="field">
+          <label for="costInput">Unit cost</label>
+          <input type="number" id="costInput" value="40" min="0" step="any">
+        </div>
+      </section>
+
+      <section class="discount-section">
+        <h2>Price discount</h2>
+        <div class="discount-display"><span id="discVal">10</span>%</div>
+        <input type="range" id="discountSlider" class="discount-slider" min="0" max="50" step="1" value="10">
+        <div class="discount-slider-labels">
+          <span>0%</span><span>25%</span><span>50%</span>
+        </div>
+      </section>
+
+    </aside>
+
+    <main class="canvas">
+      <div id="chartArea"></div>
+
+      <div class="kpi-strip">
+        <div class="kpi-card">
+          <div class="kpi-value" id="extraPctDisplay">—</div>
+          <div class="kpi-label">Volume increase needed</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value" id="newMarginPctDisplay">—</div>
+          <div class="kpi-label">New margin %</div>
+        </div>
+      </div>
+
+      <div class="compare-strip">
+        <div class="compare-card">
+          <div class="compare-title">Current</div>
+          <div class="compare-row"><span>Price</span><span id="cOldPrice">—</span></div>
+          <div class="compare-row"><span>Margin / unit</span><span id="cOldMargin">—</span></div>
+        </div>
+        <div class="compare-arrow">&#8594;</div>
+        <div class="compare-card compare-card--after">
+          <div class="compare-title">After <span id="discLabelComp">—</span>% cut</div>
+          <div class="compare-row"><span>Price</span><span id="cNewPrice">—</span></div>
+          <div class="compare-row"><span>Margin / unit</span><span id="cNewMargin">—</span></div>
+          <div class="compare-row"><span>Volume needed</span><span id="cNewExtra">—</span></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script>
+  // ── Color constants (reassigned by applyTheme) ───────────────────
+  var TEAL='#2DD4BF', TEAL_BG='rgba(45,212,191,0.07)';
+  var PLUM='#A78BFA', PLUM_BG='rgba(167,139,250,0.07)';
+  var CORAL='#FB7185', CORAL_BG='rgba(251,113,133,0.07)';
+  var AMBER='#F59E0B', AMBER_BG='rgba(245,158,11,0.08)';
+  var INK='#E2E8F0', INK_SOFT='#7C90A5', LINE='rgba(148,163,184,0.15)';
+
+  function fmt(x)  { return Math.round(x).toLocaleString(); }
+  function fmt2(x) { return (+x).toFixed(2); }
+  function fmtK(x) {
+    if(x>=1e6) return (x/1e6).toFixed(1)+'M';
+    if(x>=1e3) return Math.round(x/1e3)+'K';
+    return Math.round(x).toString();
+  }
+
+  function get(id)         { return +document.getElementById(id).value; }
+  function setText(id, v)  { document.getElementById(id).textContent = v; }
+  function setColor(id, c) { document.getElementById(id).style.color = c; }
+
+  function calculate() {
+    var price = Math.max(0.01, get('priceInput'));
+    var cost  = Math.max(0, get('costInput'));
+    var disc  = Math.max(0, get('discountSlider'));
+
+    setText('discVal', disc);
+    setText('discLabelComp', disc);
+
+    var curMargin    = price - cost;
+    var curMarginPct = curMargin / price * 100;
+
+    if(curMargin <= 0){
+      document.getElementById('chartArea').innerHTML = '<p class="empty-state">Margin is zero or negative &mdash; increase price or reduce cost.</p>';
+      ['extraPctDisplay','newMarginPctDisplay'].forEach(function(id){ setText(id,'—'); });
+      return;
+    }
+
+    // Discount at which margin hits zero
+    var dBreak = (1 - cost / price) * 100;
+
+    // Chart x-axis range (95% of break-even, capped at 50)
+    var xMax = Math.min(50, dBreak * 0.95 || 50);
+    var yMax = 200;
+
+    // Plot area inside SVG
+    var PX=80, PW=560, PY=20, PH=300;
+    var rightX = PX+PW, bottomY = PY+PH;
+
+    function svgX(d) { return PX + (d / xMax) * PW; }
+    function svgY(e) { return bottomY - (Math.min(e, yMax) / yMax) * PH; }
+
+    function extraNeeded(d) {
+      var nm = price * (1 - d/100) - cost;
+      if(nm <= 0) return Infinity;
+      return (curMargin / nm - 1) * 100;
+    }
+
+    // Sample the curve
+    var pts = [];
+    for(var i = 0; i <= 400; i++){
+      var d = i / 400 * xMax;
+      var e = extraNeeded(d);
+      if(!isFinite(e)) break;
+      pts.push(svgX(d).toFixed(1) + ',' + svgY(e).toFixed(1));
+      if(e >= yMax) break;
+    }
+
+    // Current selected discount
+    var isUnsust    = disc >= dBreak;
+    var curExtra    = extraNeeded(disc);
+    var newPrice    = price * (1 - disc/100);
+    var newMargin   = newPrice - cost;
+    var newMarginPct = isUnsust ? null : newMargin / newPrice * 100;
+
+    // ── KPIs ──
+    if(isUnsust){
+      setText('extraPctDisplay', 'N/A');      setColor('extraPctDisplay', CORAL);
+      setText('newMarginPctDisplay', '—');
+    } else {
+      var riskCol = curExtra < 25 ? TEAL : CORAL;
+      setText('extraPctDisplay', '+' + curExtra.toFixed(1) + '%'); setColor('extraPctDisplay', riskCol);
+      setText('newMarginPctDisplay', newMarginPct.toFixed(1) + '%');
+      setColor('newMarginPctDisplay', newMarginPct < curMarginPct * 0.5 ? CORAL : TEAL);
+    }
+
+    // ── Comparison strip ──
+    setText('cOldPrice',  'CHF ' + fmt2(price));
+    setText('cNewPrice',  'CHF ' + fmt2(newPrice));
+    setText('cOldMargin', 'CHF ' + fmt2(curMargin) + ' (' + curMarginPct.toFixed(0) + '%)');
+    setText('cNewMargin', isUnsust ? 'Below cost!' : 'CHF ' + fmt2(newMargin) + ' (' + newMarginPct.toFixed(0) + '%)');
+    setText('cNewExtra',  isUnsust ? '—' : '+' + curExtra.toFixed(1) + '%');
+
+    // ── Build SVG ──
+    var gY = svgY(25);   // low-risk boundary at 25% extra
+
+    // Background: only low-risk zone (teal, below 25%)
+    var zones =
+      '<rect x="'+PX+'" y="'+gY.toFixed(1)+'" width="'+PW+'" height="'+(bottomY-gY).toFixed(1)+'" fill="'+TEAL_BG+'"/>';
+
+    // Zone label
+    var zoneLabels =
+      '<text x="'+(rightX-6)+'" y="'+(bottomY-6)+'" text-anchor="end" font-family="Inter,sans-serif" font-size="9" fill="'+TEAL+'" opacity="0.5">low risk</text>';
+
+    // Horizontal gridlines
+    var grids = [50,100,150].map(function(e){
+      var gy = svgY(e).toFixed(1);
+      return '<line x1="'+PX+'" y1="'+gy+'" x2="'+rightX+'" y2="'+gy+'" stroke="'+LINE+'" stroke-width="0.5"/>';
+    }).join('');
+
+    // Glowing center dividers
+    var dividers =
+      '<line x1="'+svgX(xMax/2).toFixed(1)+'" y1="'+PY+'" x2="'+svgX(xMax/2).toFixed(1)+'" y2="'+bottomY+'" stroke="'+TEAL+'" stroke-opacity="0.13" stroke-width="1" filter="url(#pg)"/>'+
+      '<line x1="'+PX+'" y1="'+svgY(yMax/2).toFixed(1)+'" x2="'+rightX+'" y2="'+svgY(yMax/2).toFixed(1)+'" stroke="'+TEAL+'" stroke-opacity="0.13" stroke-width="1" filter="url(#pg)"/>';
+
+    // Curve fill + stroke
+    var fill = pts.length > 1
+      ? '<path d="M '+pts.join(' L ')+' L '+pts[pts.length-1].split(',')[0]+','+bottomY+' L '+PX+','+bottomY+' Z" fill="'+TEAL+'" fill-opacity="0.04" clip-path="url(#pc)"/>'
+      : '';
+    var curve = pts.length > 1
+      ? '<path d="M '+pts.join(' L ')+'" fill="none" stroke="'+TEAL+'" stroke-width="2.5" filter="url(#pg)" clip-path="url(#pc)"/>'
+      : '';
+
+    // Selected discount marker
+    var marker = '';
+    if(!isUnsust && disc <= xMax + 0.01 && curExtra <= yMax){
+      var mx = svgX(disc).toFixed(1);
+      var my = svgY(curExtra).toFixed(1);
+      marker =
+        '<line x1="'+mx+'" y1="'+PY+'" x2="'+mx+'" y2="'+bottomY+'" stroke="'+TEAL+'" stroke-opacity="0.3" stroke-width="1.5" filter="url(#pg)"/>'+
+        '<circle cx="'+mx+'" cy="'+my+'" r="6" fill="'+TEAL+'" filter="url(#pg)"/>'+
+        '<text x="'+mx+'" y="'+(+my-12)+'" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-size="11" font-weight="600" fill="'+TEAL+'" filter="url(#pg)">+'+curExtra.toFixed(1)+'%</text>';
+    }
+
+    // Axes
+    var axes =
+      '<line x1="'+PX+'" y1="'+bottomY+'" x2="'+rightX+'" y2="'+bottomY+'" stroke="'+LINE+'" stroke-width="1.5"/>'+
+      '<line x1="'+PX+'" y1="'+PY+'" x2="'+PX+'" y2="'+bottomY+'" stroke="'+LINE+'" stroke-width="1.5"/>';
+
+    // X-axis ticks
+    var xTicks = [0,10,20,30,40,50].filter(function(d){ return d <= xMax+0.5; }).map(function(d){
+      var tx = svgX(d).toFixed(1);
+      return '<line x1="'+tx+'" y1="'+bottomY+'" x2="'+tx+'" y2="'+(bottomY+4)+'" stroke="'+LINE+'" stroke-width="1"/>'+
+             '<text x="'+tx+'" y="'+(bottomY+16)+'" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="'+INK_SOFT+'">'+d+'%</text>';
+    }).join('');
+
+    // Y-axis ticks
+    var yTicks = [0,50,100,150,200].map(function(e){
+      var ty = svgY(e).toFixed(1);
+      return '<line x1="'+(PX-4)+'" y1="'+ty+'" x2="'+PX+'" y2="'+ty+'" stroke="'+LINE+'" stroke-width="1"/>'+
+             '<text x="'+(PX-8)+'" y="'+(+ty+4)+'" text-anchor="end" font-family="Inter,sans-serif" font-size="10" fill="'+INK_SOFT+'">'+e+'%</text>';
+    }).join('');
+
+    // Axis titles
+    var axisTitles =
+      '<text x="'+(PX+PW/2)+'" y="368" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="'+INK_SOFT+'">price discount &#8594;</text>'+
+      '<text x="16" y="'+(PY+PH/2)+'" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="'+INK_SOFT+'" transform="rotate(-90 16 '+(PY+PH/2)+')">volume increase needed &#8594;</text>';
+
+    document.getElementById('chartArea').innerHTML =
+      '<svg class="price-chart" viewBox="0 0 700 380" xmlns="http://www.w3.org/2000/svg">'+
+      '<defs>'+
+        '<filter id="pg" x="-40%" y="-40%" width="180%" height="180%">'+
+          '<feGaussianBlur stdDeviation="2.5" result="b"/>'+
+          '<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>'+
+        '</filter>'+
+        '<clipPath id="pc"><rect x="'+PX+'" y="'+PY+'" width="'+PW+'" height="'+PH+'"/></clipPath>'+
+      '</defs>'+
+      zones + zoneLabels + grids + dividers + fill + curve +
+      axes + xTicks + yTicks + marker + axisTitles +
+      '</svg>';
+  }
+
+  // ── Theme ────────────────────────────────────────────────────────
+  function applyTheme(isLight){
+    if(isLight){
+      document.documentElement.classList.add('light');
+      TEAL='#1A7060'; TEAL_BG='rgba(26,112,96,0.1)';
+      PLUM='#5B4B8A'; PLUM_BG='rgba(91,75,138,0.1)';
+      CORAL='#C95A35'; CORAL_BG='rgba(201,90,53,0.1)';
+      AMBER='#B45309'; AMBER_BG='rgba(180,83,9,0.1)';
+      INK='#1A2019'; INK_SOFT='#5A6558'; LINE='rgba(0,0,0,0.12)';
+    } else {
+      document.documentElement.classList.remove('light');
+      TEAL='#2DD4BF'; TEAL_BG='rgba(45,212,191,0.07)';
+      PLUM='#A78BFA'; PLUM_BG='rgba(167,139,250,0.07)';
+      CORAL='#FB7185'; CORAL_BG='rgba(251,113,133,0.07)';
+      AMBER='#F59E0B'; AMBER_BG='rgba(245,158,11,0.08)';
+      INK='#E2E8F0'; INK_SOFT='#7C90A5'; LINE='rgba(148,163,184,0.15)';
+    }
+    calculate();
+  }
+
+  document.querySelectorAll('input').forEach(function(el){
+    el.addEventListener('input', calculate);
+  });
+
+  var tt = document.getElementById('themeToggle');
+  var saved = localStorage.getItem('prio-theme');
+  if(saved === 'light'){ tt.checked = true; applyTheme(true); }
+  tt.addEventListener('change', function(){
+    applyTheme(this.checked);
+    localStorage.setItem('prio-theme', this.checked ? 'light' : 'dark');
+  });
+
+  calculate();
+</script>
+</body>
+</html>

@@ -1,0 +1,319 @@
+/* ── Design tokens: dark (default) ──────────────────────────────── */
+:root {
+  --bg:              #0B1120;
+  --surface:         #111827;
+  --surface-raised:  #1C2840;
+  --border:          rgba(148, 163, 184, 0.1);
+  --border-bright:   rgba(148, 163, 184, 0.18);
+
+  --ink:             #E2E8F0;
+  --ink-soft:        #7C90A5;
+
+  --teal:            #2DD4BF;
+  --teal-bg:         rgba(45, 212, 191, 0.07);
+  --teal-glow:       rgba(45, 212, 191, 0.25);
+
+  --plum:            #A78BFA;
+  --plum-bg:         rgba(167, 139, 250, 0.07);
+  --plum-glow:       rgba(167, 139, 250, 0.2);
+
+  --coral:           #FB7185;
+  --coral-bg:        rgba(251, 113, 133, 0.07);
+  --coral-glow:      rgba(251, 113, 133, 0.2);
+
+  --amber:           #F59E0B;
+  --amber-bg:        rgba(245, 158, 11, 0.07);
+
+  --slate:           #7C90A5;
+  --slate-bg:        rgba(124, 144, 165, 0.07);
+
+  --font-display:    'Space Grotesk', sans-serif;
+  --font-body:       'Inter', sans-serif;
+  --font-mono:       'IBM Plex Mono', monospace;
+
+  --r-sm:   6px;
+  --r-md:   8px;
+  --r-lg:   14px;
+}
+
+/* ── Design tokens: light ────────────────────────────────────────── */
+:root.light {
+  --bg:              #F4F3EE;
+  --surface:         #FFFFFF;
+  --surface-raised:  #ECEAE2;
+  --border:          rgba(0, 0, 0, 0.1);
+  --border-bright:   rgba(0, 0, 0, 0.2);
+
+  --ink:             #1A2019;
+  --ink-soft:        #5A6558;
+
+  --teal:            #1A7060;
+  --teal-bg:         rgba(26, 112, 96, 0.1);
+  --teal-glow:       rgba(26, 112, 96, 0.2);
+
+  --plum:            #5B4B8A;
+  --plum-bg:         rgba(91, 75, 138, 0.1);
+  --plum-glow:       rgba(91, 75, 138, 0.15);
+
+  --coral:           #C95A35;
+  --coral-bg:        rgba(201, 90, 53, 0.1);
+  --coral-glow:      rgba(201, 90, 53, 0.15);
+
+  --amber:           #B45309;
+  --amber-bg:        rgba(180, 83, 9, 0.1);
+
+  --slate:           #7A7A70;
+  --slate-bg:        rgba(122, 122, 112, 0.1);
+}
+
+/* ── Base ────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+}
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface-raised); border-radius: 3px; }
+
+.app { display: flex; flex-direction: column; min-height: 100vh; }
+
+/* ── Topbar ──────────────────────────────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 var(--teal-glow);
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-mark {
+  color: var(--teal);
+  filter: drop-shadow(0 0 6px var(--teal-glow));
+}
+
+/* ── Theme toggle ────────────────────────────────────────────────── */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.theme-toggle input[type=checkbox] { display: none; }
+
+.t-icon {
+  font-size: 14px;
+  color: var(--ink-soft);
+  line-height: 1;
+  user-select: none;
+}
+
+.toggle-pill {
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  position: relative;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.toggle-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--slate);
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: left 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+#themeToggle:checked + .toggle-pill {
+  background: var(--teal-bg);
+  border-color: var(--teal);
+}
+
+#themeToggle:checked + .toggle-pill .toggle-dot {
+  left: 18px;
+  background: var(--teal);
+  box-shadow: 0 0 6px var(--teal-glow);
+}
+
+/* ── Hub ─────────────────────────────────────────────────────────── */
+.hub {
+  flex: 1;
+  padding: 60px 48px;
+  /* Subtle dot grid for texture */
+  background-image: radial-gradient(circle, rgba(148, 163, 184, 0.07) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.hub-hero {
+  max-width: 700px;
+  margin: 0 auto 52px;
+  text-align: center;
+}
+
+.hub-hero h1 {
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 700;
+  margin: 0 0 10px;
+  letter-spacing: -0.02em;
+}
+
+.hub-hero p {
+  font-size: 16px;
+  color: var(--ink-soft);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ── Tool grid ───────────────────────────────────────────────────── */
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+/* ── Tool card ───────────────────────────────────────────────────── */
+.tool-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  text-decoration: none;
+  color: var(--ink);
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+/* Accent stripe at top of each card */
+.tool-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--card-color, var(--slate));
+  opacity: 0.4;
+  transition: opacity 0.2s, box-shadow 0.2s;
+}
+
+.tool-card:not(.tool-card--soon):hover {
+  border-color: var(--card-color, var(--teal));
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25), 0 0 0 1px var(--card-color, var(--teal));
+  transform: translateY(-4px);
+}
+
+.tool-card:not(.tool-card--soon):hover::after {
+  opacity: 1;
+  box-shadow: 0 0 14px var(--card-color, var(--teal));
+}
+
+.tool-card--soon {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Per-card accent colors */
+.card-teal  { --card-color: var(--teal); }
+.card-plum  { --card-color: var(--plum); }
+.card-coral { --card-color: var(--coral); }
+.card-amber { --card-color: var(--amber); }
+.card-slate { --card-color: var(--slate); }
+
+/* ── Card internals ──────────────────────────────────────────────── */
+.card-visual {
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.card-visual svg {
+  width: 100%;
+  max-width: 130px;
+  height: auto;
+}
+
+.card-body { flex: 1; }
+
+.card-title {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--ink);
+}
+
+.card-desc {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.card-footer {
+  margin-top: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.card-launch {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--card-color, var(--teal));
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: gap 0.15s;
+}
+
+.tool-card:hover .launch-arrow {
+  transform: translateX(3px);
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.card-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--slate);
+  background: var(--slate-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 3px 10px;
+  letter-spacing: 0.04em;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .hub { padding: 36px 20px; }
+  .hub-hero h1 { font-size: 30px; }
+  .tool-grid { grid-template-columns: 1fr; }
+}

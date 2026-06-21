@@ -1,0 +1,138 @@
+.pestle-canvas { display: flex; gap: 32px; flex-wrap: wrap; }
+.pestle-left  { flex: 0 0 340px; }
+.pestle-right { flex: 1; min-width: 280px; }
+
+/* ── Factor blocks in panel ──────────────────────────────────────── */
+.factor-block {
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.factor-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: var(--surface-raised);
+  border-left: 3px solid transparent;
+}
+
+.factor-letter {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.factor-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.impact-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.factor-body {
+  padding: 10px 12px 12px;
+  background: var(--surface);
+}
+
+.factor-label {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-bottom: 5px;
+}
+
+.factor-body textarea {
+  width: 100%;
+  padding: 7px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 12px;
+  min-height: 56px;
+  resize: vertical;
+  outline: none;
+  line-height: 1.5;
+  transition: border-color 0.15s;
+}
+
+.factor-body textarea:focus { border-color: var(--teal); }
+
+/* ── Trend buttons ───────────────────────────────────────────────── */
+.trend-row { display: flex; gap: 4px; }
+
+.trend-btn {
+  flex: 1;
+  padding: 5px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 11px;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  text-align: center;
+}
+
+.trend-btn.active { background: var(--plum-bg); border-color: var(--plum); color: var(--plum); font-weight: 600; }
+.trend-btn:hover:not(.active) { background: var(--surface-raised); color: var(--ink); }
+
+/* ── Radar chart ─────────────────────────────────────────────────── */
+.radar-svg {
+  width: 100%;
+  max-width: 340px;
+  height: auto;
+  display: block;
+}
+
+/* ── Summary table ───────────────────────────────────────────────── */
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.summary-table th {
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.summary-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  line-height: 1.45;
+}
+
+.summary-table tr:last-child td { border-bottom: none; }
+
+.f-letter { font-weight: 700; font-family: var(--font-display); }
+
+.impact-dots { letter-spacing: 2px; font-size: 10px; white-space: nowrap; }
+
+.notes-cell { color: var(--ink-soft); font-size: 12px; max-width: 240px; }

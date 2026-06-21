@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Idea Prioritizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="prio_tool.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="index.html" class="back-btn" title="Back to toolkit">&#8592;</a>
+      <div class="brand"><span class="brand-mark">&#9670;</span> Idea Prioritizer</div>
+    </div>
+    <nav class="view-tabs">
+      <button class="tab active" data-view="matrix">Matrix</button>
+      <button class="tab" data-view="table">Table</button>
+    </nav>
+    <div class="topbar-actions">
+      <label class="theme-toggle" title="Toggle light / dark theme">
+        <span class="t-icon">&#9790;</span>
+        <input type="checkbox" id="themeToggle">
+        <span class="toggle-pill"><span class="toggle-dot"></span></span>
+        <span class="t-icon">&#9728;</span>
+      </label>
+      <button class="ghost-btn" id="resetBtn">Reset data</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="panel">
+      <section class="compose">
+        <h2>+ New idea</h2>
+        <form id="ideaForm">
+          <div class="field">
+            <label for="nameInput">Idea name</label>
+            <input type="text" id="nameInput" placeholder="e.g. Onboarding redesign" required>
+          </div>
+          <div class="field">
+            <label for="categoryInput">Category</label>
+            <select id="categoryInput">
+              <option value="feature">Feature</option>
+              <option value="platform">Platform</option>
+              <option value="techdebt">Tech dept</option>
+              <option value="hardware">Hardware</option>
+            </select>
+          </div>
+          <div id="criteriaSliders"></div>
+          <button type="submit" class="primary-btn" id="submitBtn">Add idea</button>
+          <button type="button" class="cancel-edit" id="cancelEditBtn">Cancel edit</button>
+        </form>
+      </section>
+
+    </aside>
+
+    <main class="canvas">
+      <div class="view active" id="matrixView"></div>
+      <div class="view" id="tableView"></div>
+    </main>
+  </div>
+
+  <div class="detail-panel" id="detailPanel"></div>
+</div>
+
+<script>
+  // ── Color constants (reassigned by applyTheme) ───────────────────
+  var TEAL='#2DD4BF', TEAL_BG='rgba(45,212,191,0.07)';
+  var PLUM='#A78BFA', PLUM_BG='rgba(167,139,250,0.07)';
+  var CORAL='#FB7185', CORAL_BG='rgba(251,113,133,0.07)';
+  var SLATE='#7C90A5', SLATE_BG='rgba(124,144,165,0.07)';
+  var AMBER='#F59E0B', AMBER_BG='rgba(245,158,11,0.07)';
+  var INK='#E2E8F0', INK_SOFT='#7C90A5', LINE='rgba(148,163,184,0.15)';
+
+  // Resolves the current value for a color key (called at render time)
+  function C(k){
+    var m={teal:TEAL,tealBg:TEAL_BG,plum:PLUM,plumBg:PLUM_BG,coral:CORAL,coralBg:CORAL_BG,
+           slate:SLATE,slateBg:SLATE_BG,amber:AMBER,amberBg:AMBER_BG};
+    return m[k]||'#888';
+  }
+
+  var CATEGORIES = {
+    feature:  { label:'Feature',   colorKey:'teal',  bgKey:'tealBg' },
+    platform: { label:'Platform',  colorKey:'plum',  bgKey:'plumBg' },
+    techdebt: { label:'Tech dept', colorKey:'slate', bgKey:'slateBg' },
+    hardware: { label:'Hardware',  colorKey:'amber', bgKey:'amberBg' }
+  };
+
+  // Drives form sliders, score formula, table columns and detail bars
+  var CRITERIA = [
+    { key:'cv',  label:'Customer Value',  short:'CV',  colorKey:'teal', scale:'1 = low value · 10 = high value' },
+    { key:'bi',  label:'Business Impact', short:'BI',  colorKey:'teal', scale:'1 = low impact · 10 = high impact' },
+    { key:'ttm', label:'Time to Market',  short:'TtM', colorKey:'plum', scale:'1 = slow (months/years) · 10 = fast (days/weeks)' }
+  ];
+
+  var hasStorage = (typeof window.storage !== 'undefined');
+
+  var state = {
+    ideas: [],
+    sort: { field:'score', dir:'desc' },
+    editingId: null,
+    selectedId: null
+  };
+
+  function seedIdeas(){
+    return [
+      { id:'s1', name:'Onboarding redesign',    category:'feature',
+        cv:8, bi:8, ttm:8, createdAt:'2025-03-10T09:00:00.000Z' },
+      { id:'s2', name:'Smart notifications',    category:'feature',
+        cv:8, bi:6, ttm:8, createdAt:'2025-03-15T14:30:00.000Z' },
+      { id:'s3', name:'AI-powered search',      category:'platform',
+        cv:10, bi:8, ttm:4, createdAt:'2025-04-01T11:00:00.000Z' },
+      { id:'s4', name:'Multi-language support', category:'platform',
+        cv:6, bi:6, ttm:6, createdAt:'2025-04-20T16:00:00.000Z' },
+      { id:'s5', name:'Performance overhaul',   category:'techdebt',
+        cv:4, bi:6, ttm:8, createdAt:'2025-05-05T10:00:00.000Z' },
+      { id:'s6', name:'IoT sensor dashboard',   category:'hardware',
+        cv:8, bi:8, ttm:4, createdAt:'2025-05-20T13:00:00.000Z' }
+    ];
+  }
+
+  function uid(){ return 'idea_' + Math.random().toString(36).slice(2,9); }
+
+  function escapeHtml(str){
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  function formatDate(iso){
+    if(!iso) return '—';
+    var d = new Date(iso);
+    return ('0'+d.getDate()).slice(-2)+'.'+('0'+(d.getMonth()+1)).slice(-2)+'.'+d.getFullYear();
+  }
+
+  function compositeScore(idea){
+    var sum = CRITERIA.reduce(function(s,c){ return s + (idea[c.key]||1); }, 0);
+    return Math.round(sum / CRITERIA.length * 10);
+  }
+
+  function scoreColor(s){ return s>=70 ? TEAL : s>=45 ? SLATE : CORAL; }
+  function scoreBg(s){    return s>=70 ? TEAL_BG : s>=45 ? SLATE_BG : CORAL_BG; }
+
+  // ── Persistence (use versioned keys to avoid old-format conflicts) ──
+  async function loadState(){
+    if(hasStorage){
+      try{
+        var r = await window.storage.get('ideas_v4', false);
+        state.ideas = JSON.parse(r.value);
+      }catch(e){ state.ideas = seedIdeas(); }
+    } else {
+      state.ideas = seedIdeas();
+    }
+  }
+
+  async function saveIdeas(){
+    if(!hasStorage) return;
+    try{ await window.storage.set('ideas_v4', JSON.stringify(state.ideas), false); }
+    catch(e){ console.error('save ideas', e); }
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────
+  function renderAll(){
+    renderMatrix();
+    renderTable();
+    if(state.selectedId) selectIdea(state.selectedId);
+  }
+
+  function renderMatrix(){
+    var bubbles = state.ideas.map(function(idea){
+      var x = 70 + (idea.ttm - 1)/9 * 580;
+      var y = 380 - (idea.cv - 1)/9 * 360;
+      var r = 10 + (idea.bi - 1)/9 * 16;
+      var col = C(CATEGORIES[idea.category].colorKey);
+      return '<g>' +
+        '<circle class="bubble" cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r.toFixed(1)+
+          '" fill="'+col+'" fill-opacity="0.75" stroke="'+col+'" stroke-width="1.5"'+
+          ' onclick="selectIdea(\''+idea.id+'\')"></circle>' +
+        '<text x="'+x.toFixed(1)+'" y="'+(y+r+13).toFixed(1)+'"'+
+          ' text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="600"'+
+          ' fill="'+INK+'" style="pointer-events:none">'+escapeHtml(idea.name)+'</text>' +
+      '</g>';
+    }).join('');
+
+    var svg =
+      '<svg class="matrix" viewBox="0 0 700 430" xmlns="http://www.w3.org/2000/svg"'+
+        ' role="img" aria-label="Priority matrix">' +
+      '<defs>' +
+        '<filter id="line-glow" x="-40%" y="-40%" width="180%" height="180%">' +
+          '<feGaussianBlur stdDeviation="2.5" result="blur"/>' +
+          '<feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
+        '</filter>' +
+      '</defs>' +
+      // Quadrant backgrounds: top-left=BigBets, top-right=QuickWins, bottom-left=TimeSinks, bottom-right=FillIns
+      '<rect x="71" y="21" width="288" height="178" rx="4" fill="'+PLUM_BG+'"/>' +
+      '<rect x="361" y="21" width="288" height="178" rx="4" fill="'+TEAL_BG+'"/>' +
+      '<rect x="71" y="201" width="288" height="178" rx="4" fill="'+CORAL_BG+'"/>' +
+      '<rect x="361" y="201" width="288" height="178" rx="4" fill="'+SLATE_BG+'"/>' +
+      // Quadrant labels
+      '<text x="86"  y="44"  font-family="Space Grotesk,sans-serif" font-weight="700" font-size="13" fill="'+PLUM+'">Big bets</text>' +
+      '<text x="86"  y="60"  font-family="Inter,sans-serif" font-size="10" fill="'+INK_SOFT+'">high value, hard to build</text>' +
+      '<text x="376" y="44"  font-family="Space Grotesk,sans-serif" font-weight="700" font-size="13" fill="'+TEAL+'">Quick wins</text>' +
+      '<text x="376" y="60"  font-family="Inter,sans-serif" font-size="10" fill="'+INK_SOFT+'">high value, easy to build</text>' +
+      '<text x="86"  y="224" font-family="Space Grotesk,sans-serif" font-weight="700" font-size="13" fill="'+CORAL+'">Time sinks</text>' +
+      '<text x="86"  y="240" font-family="Inter,sans-serif" font-size="10" fill="'+INK_SOFT+'">low value, hard to build</text>' +
+      '<text x="376" y="224" font-family="Space Grotesk,sans-serif" font-weight="700" font-size="13" fill="'+SLATE+'">Fill-ins</text>' +
+      '<text x="376" y="240" font-family="Inter,sans-serif" font-size="10" fill="'+INK_SOFT+'">low value, easy to build</text>' +
+      // Outer axes
+      '<line x1="70" y1="380" x2="650" y2="380" stroke="'+LINE+'" stroke-width="1.5"/>' +
+      '<line x1="70" y1="20"  x2="70"  y2="380" stroke="'+LINE+'" stroke-width="1.5"/>' +
+      // Glowing center dividers
+      '<line x1="360" y1="20"  x2="360" y2="380" stroke="'+TEAL+'" stroke-opacity="0.22" stroke-width="1" filter="url(#line-glow)"/>' +
+      '<line x1="70"  y1="200" x2="650" y2="200" stroke="'+TEAL+'" stroke-opacity="0.22" stroke-width="1" filter="url(#line-glow)"/>' +
+      // Axis labels
+      '<text x="360" y="404" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="'+INK_SOFT+'">time to market &#8594;</text>' +
+      '<text x="40" y="200" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="'+INK_SOFT+'" transform="rotate(-90 40 200)">customer value &#8594;</text>' +
+      bubbles +
+      '</svg>';
+
+    document.getElementById('matrixView').innerHTML = state.ideas.length
+      ? svg
+      : svg + '<p class="empty-state">No ideas yet &mdash; add one from the left panel.</p>';
+  }
+
+  function renderTable(){
+    if(!state.ideas.length){
+      document.getElementById('tableView').innerHTML = '<p class="empty-state">No ideas yet &mdash; add one from the left panel.</p>';
+      return;
+    }
+    var sorted = state.ideas.slice().sort(function(a,b){
+      var av, bv;
+      if(state.sort.field==='score'){ av=compositeScore(a); bv=compositeScore(b); }
+      else if(state.sort.field==='name'){ av=a.name.toLowerCase(); bv=b.name.toLowerCase(); }
+      else if(state.sort.field==='category'){ av=CATEGORIES[a.category].label; bv=CATEGORIES[b.category].label; }
+      else if(state.sort.field==='createdAt'){ av=a.createdAt||''; bv=b.createdAt||''; }
+      else { av=a[state.sort.field]; bv=b[state.sort.field]; }
+      if(av<bv) return state.sort.dir==='asc'?-1:1;
+      if(av>bv) return state.sort.dir==='asc'?1:-1;
+      return 0;
+    });
+
+    var rows = sorted.map(function(idea){
+      var cat = CATEGORIES[idea.category];
+      var score = compositeScore(idea);
+      return '<tr onclick="selectIdea(\''+idea.id+'\')">' +
+        '<td><span class="cat-dot" style="background:'+C(cat.colorKey)+'"></span>'+escapeHtml(idea.name)+'</td>' +
+        '<td>'+cat.label+'</td>' +
+        CRITERIA.map(function(c){ return '<td class="num-cell">'+idea[c.key]+'</td>'; }).join('') +
+        '<td><span class="score-badge" style="background:'+scoreBg(score)+';color:'+scoreColor(score)+'">'+score+'</span></td>' +
+        '<td class="num-cell date-cell">'+formatDate(idea.createdAt)+'</td>' +
+        '<td class="row-actions" onclick="event.stopPropagation()">' +
+          '<button onclick="startEdit(\''+idea.id+'\')">Edit</button>' +
+          '<button onclick="deleteIdea(\''+idea.id+'\')">Delete</button>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    var headers =
+      '<th onclick="setSort(\'name\')">Idea</th>' +
+      '<th onclick="setSort(\'category\')">Category</th>' +
+      CRITERIA.map(function(c){
+        return '<th onclick="setSort(\''+c.key+'\')" title="'+c.scale+'">'+c.short+'</th>';
+      }).join('') +
+      '<th onclick="setSort(\'score\')">Score</th>' +
+      '<th onclick="setSort(\'createdAt\')">Added</th>' +
+      '<th></th>';
+
+    document.getElementById('tableView').innerHTML =
+      '<div class="table-wrap"><table class="idea-table">'+
+        '<thead><tr>'+headers+'</tr></thead>'+
+        '<tbody>'+rows+'</tbody>'+
+      '</table></div>';
+  }
+
+  function setSort(field){
+    if(state.sort.field===field){ state.sort.dir = state.sort.dir==='asc'?'desc':'asc'; }
+    else { state.sort.field=field; state.sort.dir=field==='score'?'desc':'asc'; }
+    renderTable();
+  }
+
+  function critBar(label, value, color, note){
+    return '<div class="crit-bar-row">' +
+      '<div class="crit-bar-label">'+
+        '<span>'+label+(note?' <span class="bar-note">'+note+'</span>':'')+'</span>'+
+        '<span>'+value+'/10</span>'+
+      '</div>' +
+      '<div class="crit-bar-track"><div class="crit-bar-fill" style="width:'+(value*10)+'%;background:'+color+'"></div></div>' +
+    '</div>';
+  }
+
+  function selectIdea(id){
+    var idea = state.ideas.find(function(i){ return i.id===id; });
+    if(!idea) return;
+    state.selectedId = id;
+    var cat = CATEGORIES[idea.category];
+    var score = compositeScore(idea);
+    var bars = CRITERIA.map(function(c){
+      return critBar(c.label, idea[c.key], C(c.colorKey), '');
+    }).join('');
+    var panel = document.getElementById('detailPanel');
+    panel.innerHTML =
+      '<button class="detail-close" onclick="closeDetail()">&#10005;</button>' +
+      '<h3>'+escapeHtml(idea.name)+'</h3>' +
+      '<span class="detail-cat-tag" style="background:'+C(cat.bgKey)+';color:'+C(cat.colorKey)+'">'+cat.label+'</span>' +
+      '<div class="detail-score" style="color:'+scoreColor(score)+'">'+score+'</div>' +
+      '<div class="detail-score-label">priority score</div>' +
+      bars +
+      '<div class="detail-meta">Added '+formatDate(idea.createdAt)+'</div>' +
+      '<div class="detail-actions">' +
+        '<button class="ghost-btn" onclick="startEdit(\''+idea.id+'\')">Edit</button>' +
+        '<button class="ghost-btn" onclick="deleteIdea(\''+idea.id+'\')">Delete</button>' +
+      '</div>';
+    panel.classList.add('open');
+  }
+
+  function closeDetail(){
+    document.getElementById('detailPanel').classList.remove('open');
+    state.selectedId = null;
+  }
+
+  // ── UI builders (called once on load to create dynamic elements) ──
+  function buildCriteriaSliders(){
+    document.getElementById('criteriaSliders').innerHTML = CRITERIA.map(function(c){
+      return '<div class="field">'+
+        '<label>'+c.label+'</label>'+
+        '<div class="slider-row">'+
+          '<input type="range" id="'+c.key+'Slider" min="1" max="10" value="5">'+
+          '<span class="slider-val" id="'+c.key+'Val">5</span>'+
+        '</div>'+
+        '<div class="scale-hint">'+c.scale+'</div>'+
+      '</div>';
+    }).join('');
+  }
+
+  // ── Form helpers ─────────────────────────────────────────────────
+  function setSliderValue(key, val){
+    document.getElementById(key+'Slider').value = val;
+    document.getElementById(key+'Val').textContent = val;
+  }
+
+  function resetSliderDisplays(){
+    CRITERIA.forEach(function(c){ setSliderValue(c.key, 5); });
+  }
+
+  function startEdit(id){
+    var idea = state.ideas.find(function(i){ return i.id===id; });
+    if(!idea) return;
+    document.getElementById('nameInput').value = idea.name;
+    document.getElementById('categoryInput').value = idea.category;
+    CRITERIA.forEach(function(c){ setSliderValue(c.key, idea[c.key]); });
+    state.editingId = id;
+    document.getElementById('submitBtn').textContent = 'Update idea';
+    document.getElementById('cancelEditBtn').style.display = 'block';
+    closeDetail();
+    document.querySelector('.panel').scrollTo({ top:0, behavior:'smooth' });
+  }
+
+  function cancelEdit(){
+    state.editingId = null;
+    document.getElementById('ideaForm').reset();
+    document.getElementById('categoryInput').value = 'feature';
+    resetSliderDisplays();
+    document.getElementById('submitBtn').textContent = 'Add idea';
+    document.getElementById('cancelEditBtn').style.display = 'none';
+  }
+
+  function deleteIdea(id){
+    if(!confirm('Delete this idea?')) return;
+    state.ideas = state.ideas.filter(function(i){ return i.id!==id; });
+    if(state.editingId===id) cancelEdit();
+    if(state.selectedId===id) closeDetail();
+    saveIdeas();
+    renderAll();
+  }
+
+  // ── Theme ─────────────────────────────────────────────────────────
+  function applyTheme(isLight){
+    if(isLight){
+      document.documentElement.classList.add('light');
+      TEAL='#1A7060'; TEAL_BG='rgba(26,112,96,0.1)';
+      PLUM='#5B4B8A'; PLUM_BG='rgba(91,75,138,0.1)';
+      CORAL='#C95A35'; CORAL_BG='rgba(201,90,53,0.1)';
+      SLATE='#7A7A70'; SLATE_BG='rgba(122,122,112,0.1)';
+      AMBER='#B45309'; AMBER_BG='rgba(180,83,9,0.1)';
+      INK='#1A2019'; INK_SOFT='#5A6558'; LINE='rgba(0,0,0,0.12)';
+    } else {
+      document.documentElement.classList.remove('light');
+      TEAL='#2DD4BF'; TEAL_BG='rgba(45,212,191,0.07)';
+      PLUM='#A78BFA'; PLUM_BG='rgba(167,139,250,0.07)';
+      CORAL='#FB7185'; CORAL_BG='rgba(251,113,133,0.07)';
+      SLATE='#7C90A5'; SLATE_BG='rgba(124,144,165,0.07)';
+      AMBER='#F59E0B'; AMBER_BG='rgba(245,158,11,0.07)';
+      INK='#E2E8F0'; INK_SOFT='#7C90A5'; LINE='rgba(148,163,184,0.15)';
+    }
+    renderAll();
+  }
+
+  // ── Boot sequence ─────────────────────────────────────────────────
+  buildCriteriaSliders();
+
+  CRITERIA.forEach(function(c){
+    var slider = document.getElementById(c.key+'Slider');
+    var out    = document.getElementById(c.key+'Val');
+    slider.addEventListener('input', function(){ out.textContent = slider.value; });
+  });
+
+  document.getElementById('ideaForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var name = document.getElementById('nameInput').value.trim();
+    if(!name) return;
+    var existing = state.editingId ? state.ideas.find(function(i){ return i.id===state.editingId; }) : null;
+    var idea = {
+      id: state.editingId || uid(),
+      name: name,
+      category: document.getElementById('categoryInput').value,
+      createdAt: existing ? existing.createdAt : new Date().toISOString()
+    };
+    CRITERIA.forEach(function(c){
+      idea[c.key] = Number(document.getElementById(c.key+'Slider').value);
+    });
+    if(state.editingId){
+      var idx = state.ideas.findIndex(function(i){ return i.id===state.editingId; });
+      state.ideas[idx] = idea;
+    } else {
+      state.ideas.push(idea);
+    }
+    cancelEdit();
+    saveIdeas();
+    renderAll();
+  });
+
+  document.getElementById('cancelEditBtn').addEventListener('click', cancelEdit);
+
+  document.querySelectorAll('.tab').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.tab').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      var view = btn.dataset.view;
+      document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); });
+      document.getElementById(view+'View').classList.add('active');
+    });
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', async function(){
+    if(!confirm('Clear all ideas? This cannot be undone.')) return;
+    state.ideas = [];
+    if(hasStorage){
+      try{ await window.storage.delete('ideas_v4', false); }catch(e){}
+    }
+    closeDetail();
+    cancelEdit();
+    renderAll();
+  });
+
+  var themeToggle = document.getElementById('themeToggle');
+  var savedTheme  = localStorage.getItem('prio-theme');
+  if(savedTheme === 'light'){
+    themeToggle.checked = true;
+    applyTheme(true);
+  }
+  themeToggle.addEventListener('change', function(){
+    applyTheme(this.checked);
+    localStorage.setItem('prio-theme', this.checked ? 'light' : 'dark');
+  });
+
+  async function init(){
+    document.getElementById('matrixView').innerHTML = '<p class="empty-state">Loading&hellip;</p>';
+    await loadState();
+    renderAll();
+  }
+  init();
+</script>
+</body>
+</html>
