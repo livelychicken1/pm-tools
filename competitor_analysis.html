@@ -446,6 +446,22 @@
     }
 
     if (t.classList.contains('score-input') && t.dataset.diag) {
+      var raw = +t.value;
+      if (!raw || raw < 1 || raw > 10) return;
+      var dg = state.diagrams.find(function(d) { return d.id === t.dataset.diag; });
+      if (dg) {
+        if (!dg.scores) dg.scores = {};
+        if (!dg.scores[t.dataset.comp]) dg.scores[t.dataset.comp] = {};
+        dg.scores[t.dataset.comp][t.dataset.feat] = raw;
+        renderSpiderInCard(dg);
+      }
+      return;
+    }
+  });
+
+  grid.addEventListener('change', function(e) {
+    var t = e.target;
+    if (t.classList.contains('score-input') && t.dataset.diag) {
       var v = Math.max(1, Math.min(10, Math.round(+t.value) || 5));
       t.value = v;
       var dg = state.diagrams.find(function(d) { return d.id === t.dataset.diag; });
@@ -456,7 +472,6 @@
         save();
         renderSpiderInCard(dg);
       }
-      return;
     }
   });
 
